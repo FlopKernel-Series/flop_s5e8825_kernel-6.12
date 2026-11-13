@@ -20,6 +20,8 @@
 #include <asm/stack_pointer.h>
 #include <asm/stacktrace.h>
 
+#include <linux/sec_debug_built.h>
+
 /*
  * Kernel unwind state
  *
@@ -304,6 +306,14 @@ static bool dump_backtrace_entry(void *arg, unsigned long where)
 	return true;
 }
 
+#if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT)
+static bool dump_backtrace_entry_auto_comment(void *arg, unsigned long where)
+{
+	pr_auto(ASL2, " %pSb\n", (void *)where);
+	return true;
+}
+#endif
+
 void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk,
 		    const char *loglvl)
 {
@@ -324,6 +334,35 @@ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk,
 	put_task_stack(tsk);
 }
 EXPORT_SYMBOL_GPL(dump_backtrace);
+
+#if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT)
+void dump_backtrace_auto_comment(struct pt_regs *regs, struct task_struct *tsk)
+
+{
+	pr_debug("%s(regs = %p tsk = %p)\n", __func__, regs, tsk);
+
+	if (regs && user_mode(regs))
+		return;
+
+	if (!tsk)
+		tsk = current;
+
+	if (!try_get_task_stack(tsk))
+		return;
+
+	pr_auto_once(2);
+	pr_auto(ASL2, "Call trace:\n");
+	arch_stack_walk(dump_backtrace_entry_auto_comment, NULL, tsk, regs);
+
+	put_task_stack(tsk);
+}
+
+void show_stack_auto_comment(struct task_struct *tsk, unsigned long *sp)
+{
+	dump_backtrace_auto_comment(NULL, tsk);
+	barrier();
+}
+#endif /* CONFIG_SEC_DEBUG_AUTO_COMMENT */
 
 void show_stack(struct task_struct *tsk, unsigned long *sp, const char *loglvl)
 {
