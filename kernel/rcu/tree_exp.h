@@ -9,6 +9,7 @@
 
 #include <linux/console.h>
 #include <linux/lockdep.h>
+#include <linux/sec_debug_built.h>
 
 #include <trace/hooks/rcu.h>
 
