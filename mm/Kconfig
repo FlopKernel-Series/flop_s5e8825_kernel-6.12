@@ -1378,4 +1378,17 @@ config NUMA_EMU
 
 source "mm/damon/Kconfig"
 
+config HPA
+	default y
+	bool "High-order Pages Allocator"
+	help
+	  Turns on High-order Pages Allocator based on page migration.
+
+config IO_RECORD
+	bool "IO_RECORT feature"
+	depends on MMU
+	default y
+	help
+	  Enable this for IO_RECORD
+
 endmenu

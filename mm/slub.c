@@ -47,7 +47,11 @@
 #include <trace/hooks/mm.h>
 #include <trace/hooks/fault.h>
 
+#include <linux/sec_debug_built.h>
+
 #include "internal.h"
+
+
 
 /*
  * Lock order:
@@ -384,6 +388,16 @@ struct kmem_cache_cpu {
 #endif
 };
 #endif /* CONFIG_SLUB_TINY */
+#ifdef CONFIG_SEC_DEBUG_BUG_ON_SLUB_CORRUPTION
+static inline void secdbg_slub_bug(void)
+{
+	BUG();
+}
+#else
+static inline void secdbg_slub_bug(void)
+{
+}
+#endif
 
 static inline void stat(const struct kmem_cache *s, enum stat_item si)
 {
@@ -996,6 +1010,7 @@ static void set_track_update(struct kmem_cache *s, void *object,
 {
 	struct track *p = get_track(s, object, alloc);
 
+
 #ifdef CONFIG_STACKDEPOT
 	p->handle = handle;
 #endif
@@ -1032,7 +1047,7 @@ static void print_track(const char *s, struct track *t, unsigned long pr_time)
 	if (!t->addr)
 		return;
 
-	pr_err("%s in %pS age=%lu cpu=%u pid=%d\n",
+	pr_auto(ASL7, "%s in %pS age=%lu cpu=%u pid=%d\n",
 	       s, (void *)t->addr, pr_time - t->when, t->cpu, t->pid);
 #ifdef CONFIG_STACKDEPOT
 	handle = READ_ONCE(t->handle);
@@ -1074,7 +1089,7 @@ static void __slab_bug(struct kmem_cache *s, const char *fmt, va_list argsp)
 	vaf.fmt = fmt;
 	vaf.va = &args;
 	pr_err("=============================================================================\n");
-	pr_err("BUG %s (%s): %pV\n", s ? s->name : "<unknown>", print_tainted(), &vaf);
+	pr_auto(ASL7, "BUG %s (%s): %pV\n",  s ? s->name : "<unknown>", print_tainted(), &vaf);
 	pr_err("-----------------------------------------------------------------------------\n\n");
 	va_end(args);
 }
@@ -1113,7 +1128,7 @@ static void print_trailer(struct kmem_cache *s, struct slab *slab, u8 *p)
 
 	print_slab_info(slab);
 
-	pr_err("Object 0x%p @offset=%tu fp=0x%p\n\n",
+	pr_auto(ASL7, "Object 0x%p @offset=%tu fp=0x%p\n\n",
 	       p, p - addr, get_freepointer(s, p));
 
 	if (s->flags & SLAB_RED_ZONE)
@@ -1151,6 +1166,16 @@ static void object_err(struct kmem_cache *s, struct slab *slab,
 		return;
 
 	slab_bug(s, reason);
+#ifdef CONFIG_SEC_DEBUG_BUG_ON_SLUB_CORRUPTION
+static inline void secdbg_slub_bug(void)
+{
+	BUG();
+}
+#else
+static inline void secdbg_slub_bug(void)
+{
+}
+#endif
 	if (!object || !check_valid_pointer(s, slab, object)) {
 		print_slab_info(slab);
 		pr_err("Invalid pointer 0x%p\n", object);
@@ -1158,6 +1183,7 @@ static void object_err(struct kmem_cache *s, struct slab *slab,
 		print_trailer(s, slab, object);
 	}
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
+	pr_auto_disable(7);
 
 	WARN_ON(1);
 }
@@ -1195,17 +1221,20 @@ static __printf(3, 4) void slab_err(struct kmem_cache *s, struct slab *slab,
 	if (slab_add_kunit_errors())
 		return;
 
+	pr_auto_once(7);
 	va_start(args, fmt);
 	__slab_bug(s, fmt, args);
 	va_end(args);
 
 	__slab_err(slab);
+	pr_auto_disable(7);
 }
 
 static void init_object(struct kmem_cache *s, void *object, u8 val)
 {
 	u8 *p = kasan_reset_tag(object);
 	unsigned int poison_size = s->object_size;
+
 
 	if (s->flags & SLAB_RED_ZONE) {
 		/*
@@ -1258,6 +1287,7 @@ check_bytes_and_report(struct kmem_cache *s, struct slab *slab,
 	u8 *end;
 	u8 *addr = slab_address(slab);
 
+
 	metadata_access_enable();
 	fault = memchr_inv(kasan_reset_tag(start), value, bytes);
 	metadata_access_disable();
@@ -1271,11 +1301,14 @@ check_bytes_and_report(struct kmem_cache *s, struct slab *slab,
 	if (slab_add_kunit_errors())
 		goto skip_bug_print;
 
-	pr_err("[%s overwritten] 0x%p-0x%p @offset=%tu. First byte 0x%x instead of 0x%x\n",
+	pr_auto_once(7);
+	pr_auto(ASL7, "[%s overwritten] 0x%p-0x%p @offset=%tu. First byte 0x%x instead of 0x%x\n",
 	       what, fault, end - 1, fault - addr, fault[0], value);
 
 	if (slab_obj_print)
 		object_err(s, slab, object, "Object corrupt");
+	pr_auto_disable(7);
+	secdbg_slub_bug();
 
 skip_bug_print:
 	restore_bytes(s, what, value, fault, end);
@@ -1356,6 +1389,7 @@ slab_pad_check(struct kmem_cache *s, struct slab *slab)
 	if (!(s->flags & SLAB_POISON))
 		return;
 
+
 	start = slab_address(slab);
 	length = slab_size(slab);
 	end = start + length;
@@ -1376,6 +1410,7 @@ slab_pad_check(struct kmem_cache *s, struct slab *slab)
 		 fault, end - 1, fault - start);
 	print_section(KERN_ERR, "Padding ", pad, remainder);
 	__slab_err(slab);
+	secdbg_slub_bug();
 
 	restore_bytes(s, "slab padding", POISON_INUSE, fault, end);
 }
@@ -1448,6 +1483,7 @@ static int check_object(struct kmem_cache *s, struct slab *slab,
 	if ((freeptr_outside_object(s) || val != SLUB_RED_ACTIVE) &&
 	    !check_valid_pointer(s, slab, get_freepointer(s, p))) {
 		object_err(s, slab, p, "Freepointer corrupt");
+		secdbg_slub_bug();
 		/*
 		 * No choice but to zap it and thus lose the remainder
 		 * of the free objects in this slab. May cause
@@ -1468,6 +1504,7 @@ static int check_slab(struct kmem_cache *s, struct slab *slab)
 		slab_err(s, slab, "Not a valid slab page");
 		return 0;
 	}
+
 
 	maxobj = order_objects(slab_order(slab), s->size);
 	if (slab->objects > maxobj) {
@@ -1502,6 +1539,8 @@ static int on_freelist(struct kmem_cache *s, struct slab *slab, void *search)
 	int max_objects;
 
 	fp = slab->freelist;
+
+
 	while (fp && nr <= slab->objects) {
 		if (fp == search)
 			return 1;
@@ -1509,9 +1548,11 @@ static int on_freelist(struct kmem_cache *s, struct slab *slab, void *search)
 			if (object) {
 				object_err(s, slab, object,
 					"Freechain corrupt");
+				secdbg_slub_bug();
 				set_freepointer(s, object, NULL);
 			} else {
 				slab_err(s, slab, "Freepointer corrupt");
+				secdbg_slub_bug();
 				slab->freelist = NULL;
 				slab->inuse = slab->objects;
 				slab_fix(s, "Freelist cleared");
@@ -1531,12 +1572,14 @@ static int on_freelist(struct kmem_cache *s, struct slab *slab, void *search)
 	if (slab->objects != max_objects) {
 		slab_err(s, slab, "Wrong number of objects. Found %d but should be %d",
 			 slab->objects, max_objects);
+		secdbg_slub_bug();
 		slab->objects = max_objects;
 		slab_fix(s, "Number of objects adjusted");
 	}
 	if (slab->inuse != slab->objects - nr) {
 		slab_err(s, slab, "Wrong object count. Counter is %d but counted were %d",
 			 slab->inuse, slab->objects - nr);
+		secdbg_slub_bug();
 		slab->inuse = slab->objects - nr;
 		slab_fix(s, "Object count adjusted");
 	}
@@ -1656,6 +1699,7 @@ static noinline bool alloc_debug_processing(struct kmem_cache *s,
 	return true;
 
 bad:
+	secdbg_slub_bug();
 	if (folio_test_slab(slab_folio(slab))) {
 		/*
 		 * If this is a slab page then lets do the best we can
@@ -1867,6 +1911,7 @@ slab_flags_t kmem_cache_flags(slab_flags_t flags, const char *name)
 	char *next_block;
 	slab_flags_t block_flags;
 	slab_flags_t slub_debug_local = slub_debug;
+
 
 	if (flags & SLAB_NO_USER_FLAGS)
 		return flags;
@@ -2504,6 +2549,7 @@ static void *setup_object(struct kmem_cache *s, void *object)
 /*
  * Slab allocation and freeing
  */
+
 static inline struct slab *alloc_slab_page(gfp_t flags, int node,
 		struct kmem_cache_order_objects oo)
 {
@@ -2741,6 +2787,7 @@ static struct slab *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 	return allocate_slab(s,
 		flags & (GFP_RECLAIM_MASK | GFP_CONSTRAINT_MASK), node);
 }
+
 
 static void __free_slab(struct kmem_cache *s, struct slab *slab)
 {
@@ -3512,6 +3559,7 @@ static inline bool free_debug_processing(struct kmem_cache *s,
 	void *object = head;
 	int cnt = 0;
 
+
 	if (s->flags & SLAB_CONSISTENCY_CHECKS) {
 		if (!check_slab(s, slab))
 			goto out;
@@ -3551,12 +3599,15 @@ out_cnt:
 		slab_err(s, slab, "Bulk free expected %d objects but found %d\n",
 			 *bulk_cnt, cnt);
 		*bulk_cnt = cnt;
+		secdbg_slub_bug();
 	}
 
 out:
 
-	if (!checks_ok)
+	if (!checks_ok) {
+		secdbg_slub_bug();
 		slab_fix(s, "Object at 0x%p not freed", object);
+	}
 
 	return checks_ok;
 }
@@ -5570,6 +5621,7 @@ static void list_slab_objects(struct kmem_cache *s, struct slab *slab)
 	void *addr = slab_address(slab);
 	void *p;
 
+
 	if (!slab_add_kunit_errors())
 		slab_bug(s, "Objects remaining on __kmem_cache_shutdown()");
 
@@ -6225,6 +6277,7 @@ static void validate_slab(struct kmem_cache *s, struct slab *slab,
 	void *p;
 	void *addr = slab_address(slab);
 
+
 	if (!check_slab(s, slab) || !on_freelist(s, slab, NULL))
 		return;
 
@@ -6452,6 +6505,7 @@ static void process_slab(struct loc_track *t, struct kmem_cache *s,
 	void *addr = slab_address(slab);
 	bool is_alloc = (alloc == TRACK_ALLOC);
 	void *p;
+
 
 	__fill_map(obj_map, s, slab);
 
