@@ -534,3 +534,9 @@ endif
 # Separate option because drm_panel_orientation_quirks.c is shared with fbdev
 config DRM_PANEL_ORIENTATION_QUIRKS
 	tristate
+
+config DRM_PANEL_MCD_COMMON_TEST
+    bool "KUnit test for exynos mcd-common-panel test"
+    depends on SEC_KUNIT
+    help
+      TODO: Describe config fully.

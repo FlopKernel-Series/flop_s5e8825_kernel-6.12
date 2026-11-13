@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Makefile for the Linux kernel panel device drivers.
+#
+
+
+vendor_src := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+
+subdir-ccflags-y += -I$(vendor_src)/../oled_common
+
+
+subdir-ccflags-y += -I$(vendor_src)/../oled_common
+
+mcd-panel-db7f2010b_a26x-y += db7f2010b.o db7f2010b_a26x.o
+obj-$(CONFIG_USDM_PANEL_DB7F2010B) += mcd-panel-db7f2010b_a26x.o
+
