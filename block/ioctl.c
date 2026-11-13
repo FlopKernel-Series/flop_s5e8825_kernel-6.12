@@ -141,6 +141,10 @@ static int blk_ioctl_discard(struct block_device *bdev, blk_mode_t mode,
 	if (err)
 		return err;
 
+	printk(KERN_INFO "DIS %d:%d %llu %llu",
+		MAJOR(bdev->bd_dev), MINOR(bdev->bd_dev),
+		(unsigned long long)start, (unsigned long long)len);
+
 	inode_lock(bdev->bd_mapping->host);
 	filemap_invalidate_lock(bdev->bd_mapping);
 	err = truncate_bdev_range(bdev, mode, start, start + len - 1);
