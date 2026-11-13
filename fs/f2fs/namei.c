@@ -353,6 +353,38 @@ fail_drop:
 	return ERR_PTR(err);
 }
 
+#ifdef CONFIG_F2FS_ML_BASED_STREAM_SEPARATION
+static void update_ml_stream_info(struct inode *inode, struct inode *dir,
+			struct dentry *dentry)
+{
+#ifdef CONFIG_F2FS_ML_STREAMID_FORCE_COLD
+	if (S_ISREG(inode->i_mode)) {
+		if (is_extension_exist(dentry->d_name.name, "exo", true, false))
+			F2FS_I(inode)->is_force_cold = 1;
+	}
+#endif
+	if (F2FS_I(dir)->is_cache == 1) {
+		F2FS_I(inode)->is_cache = 1;
+		return;
+	}
+	if (strlen("cache") == dentry->d_parent->d_name.len) {
+		if (!strcmp(dentry->d_parent->d_name.name, "cache")) {
+			F2FS_I(inode)->is_cache = 1;
+			F2FS_I(dir)->is_cache = 1;
+			return;
+		}
+	}
+	if (S_ISDIR(inode->i_mode)) {
+		if (strlen("cache") == dentry->d_name.len &&
+				!strcmp(dentry->d_name.name, "cache")) {
+			F2FS_I(inode)->is_cache = 1;
+			return;
+		}
+	}
+	F2FS_I(inode)->is_cache = 0;
+}
+#endif
+
 static int f2fs_create(struct mnt_idmap *idmap, struct inode *dir,
 		       struct dentry *dentry, umode_t mode, bool excl)
 {
@@ -375,6 +407,9 @@ static int f2fs_create(struct mnt_idmap *idmap, struct inode *dir,
 	if (IS_ERR(inode))
 		return PTR_ERR(inode);
 
+#ifdef CONFIG_F2FS_ML_BASED_STREAM_SEPARATION
+	update_ml_stream_info(inode, dir, dentry);
+#endif
 	inode->i_op = &f2fs_file_inode_operations;
 	inode->i_fop = &f2fs_file_operations;
 	inode->i_mapping->a_ops = &f2fs_dblock_aops;
@@ -500,13 +535,24 @@ static struct dentry *f2fs_lookup(struct inode *dir, struct dentry *dentry,
 	}
 
 	ino = le32_to_cpu(de->ino);
-	f2fs_put_page(page, 0);
 
 	inode = f2fs_iget(dir->i_sb, ino);
 	if (IS_ERR(inode)) {
+		if (PTR_ERR(inode) != -ENOMEM) {
+			struct f2fs_sb_info *sbi = F2FS_I_SB(dir);
+
+			f2fs_err_ratelimited(sbi,
+				"F2FS-fs: Invalid inode referenced: %u, at parent inode: %lu, err: %ld\n",
+				ino, dir->i_ino, PTR_ERR(inode));
+			print_block_data(sbi, page->index,
+					page_address(page), 0, F2FS_BLKSIZE);
+			f2fs_bug_on(sbi, 1);
+		}
+		f2fs_put_page(page, 0);
 		err = PTR_ERR(inode);
 		goto out;
 	}
+	f2fs_put_page(page, 0);
 
 	if (inode->i_nlink == 0) {
 		f2fs_warn(F2FS_I_SB(inode), "%s: inode (ino=%lx) has zero i_nlink",
@@ -524,6 +570,9 @@ static struct dentry *f2fs_lookup(struct inode *dir, struct dentry *dentry,
 		err = -EPERM;
 		goto out_iput;
 	}
+#ifdef CONFIG_F2FS_ML_BASED_STREAM_SEPARATION
+	update_ml_stream_info(inode, dir, dentry);
+#endif
 out_splice:
 	if (IS_ENABLED(CONFIG_UNICODE) && !inode && IS_CASEFOLDED(dir)) {
 		/* Eventually we want to call d_add_ci(dentry, NULL)
@@ -728,6 +777,9 @@ static int f2fs_mkdir(struct mnt_idmap *idmap, struct inode *dir,
 	if (IS_ERR(inode))
 		return PTR_ERR(inode);
 
+#ifdef CONFIG_F2FS_ML_BASED_STREAM_SEPARATION
+	update_ml_stream_info(inode, dir, dentry);
+#endif
 	inode->i_op = &f2fs_dir_inode_operations;
 	inode->i_fop = &f2fs_dir_operations;
 	inode->i_mapping->a_ops = &f2fs_dblock_aops;

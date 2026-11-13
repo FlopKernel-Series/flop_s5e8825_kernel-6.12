@@ -240,7 +240,13 @@ static int erofs_fill_inode(struct inode *inode)
 		return -EFSCORRUPTED;
 	}
 
+#ifdef CONFIG_EROFS_ENABLE_LARGE_FOLIOS
+	/*
+	 * Disable large folios because
+	 * cleancache doesn't support large folios yet
+	 */
 	mapping_set_large_folios(inode->i_mapping);
+#endif
 	if (erofs_inode_is_data_compressed(vi->datalayout)) {
 #ifdef CONFIG_EROFS_FS_ZIP
 		DO_ONCE_LITE_IF(inode->i_blkbits != PAGE_SHIFT,

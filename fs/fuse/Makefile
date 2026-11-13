@@ -16,5 +16,6 @@ fuse-y += iomode.o
 fuse-$(CONFIG_FUSE_DAX) += dax.o
 fuse-$(CONFIG_FUSE_PASSTHROUGH) += passthrough.o
 fuse-$(CONFIG_FUSE_BPF) += backing.o
+fuse-$(CONFIG_FUSE_SEC) += sec.o
 
 virtiofs-y := virtio_fs.o

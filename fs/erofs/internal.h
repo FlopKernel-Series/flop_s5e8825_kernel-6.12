@@ -18,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/iomap.h>
+#include <linux/cleancache.h>
 #include "erofs_fs.h"
 
 /* redefine pr_fmt "erofs: " */
