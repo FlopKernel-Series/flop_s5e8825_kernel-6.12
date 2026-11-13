@@ -846,3 +846,4 @@ obj-$(CONFIG_SND_SOC_RT5665_MX)	+= snd-soc-rt5665.o
 obj-$(CONFIG_SND_SOC_RT5691_MX)	+= snd-soc-rt5691.o
 obj-$(CONFIG_SND_SOC_FS1816)	+= snd-soc-fs1816.o
 obj-$(CONFIG_SND_SOC_TFA9878)	+= tfa9878/
+obj-$(CONFIG_SND_SMARTPA_AW882XX) += aw882xx/

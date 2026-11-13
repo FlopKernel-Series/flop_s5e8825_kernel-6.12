@@ -391,3 +391,5 @@ config ARM_EXYNOS_DSU_FREQ
 	help
 	  This adds the DSUFreq driver for specific exynos chipset. Exynos
 	  DSUFreq supported SoC must use the exynos CAL framework.
+
+

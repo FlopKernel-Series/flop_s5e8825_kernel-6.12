@@ -18,3 +18,5 @@ ifeq ($(CONFIG_SND),y)
 endif
 
 soundcore-y  := sound_core.o
+
+obj-y += soc/samsung/exynos/
