@@ -55,6 +55,14 @@ obj-$(CONFIG_USB_DWC3_IMX8MP)		+= dwc3-imx8mp.o
 obj-$(CONFIG_USB_DWC3_XILINX)		+= dwc3-xilinx.o
 obj-$(CONFIG_USB_DWC3_OCTEON)		+= dwc3-octeon.o
 obj-$(CONFIG_USB_DWC3_RTK)		+= dwc3-rtk.o
+
+USB_HDRS="-I$(srctree)/drivers/usb/dwc3"
+USB_LDRS="-I$(srctree)/include/linux"
+
+ifdef CONFIG_USB_DWC3_EXYNOS_MODULE
+subdir-ccflags-y += $(USB_HDRS)
+subdir-ccflags-y += $(USB_LDRS)
+endif
 obj-$(CONFIG_USB_DWC3_EXYNOS_MODULE)		+= dwc3-exynos-usb.o
 dwc3-exynos-usb-y			+= dwc3-exynos.o
 dwc3-exynos-usb-y			+= dwc3-exynos-otg.o
@@ -73,4 +81,4 @@ obj-$(CONFIG_EXYNOS_USB_KUNIT_TEST) 	+= test/
 # USB Functions
 obj-$(CONFIG_SEC_USB_HOOK) += sec_usb_hook.o
 
-subdir-ccflags-y += -I${ROOT_DIR}/${KERNEL_DIR}/drivers/usb/dwc3
+subdir-ccflags-y += -I$(srctree)/drivers/usb/dwc3
