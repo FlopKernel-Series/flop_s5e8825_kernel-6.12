@@ -1254,6 +1254,9 @@ extern int send_sigurg(struct file *file);
 #define SB_I_RETIRED	0x00000800	/* superblock shouldn't be reused */
 #define SB_I_NOUMASK	0x00001000	/* VFS does not apply umask */
 #define SB_I_NOIDMAP	0x00002000	/* No idmapped mounts on this superblock */
+#ifdef CONFIG_FREEZABLE_IN_LOOKUP
+#define SB_I_FREEZABLE_IN_LOOKUP 0x80000000 /* Freezable FS in lookup_slow */
+#endif
 
 /* Possible states of 'frozen' field */
 enum {
