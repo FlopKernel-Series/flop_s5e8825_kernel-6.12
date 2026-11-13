@@ -38,6 +38,9 @@ extern const u8 kallsyms_token_table[] __weak;
 extern const u16 kallsyms_token_index[] __weak;
 
 extern const unsigned int kallsyms_markers[] __weak;
+#if IS_ENABLED(CONFIG_SEC_DEBUG_BUILT)
+extern const u8 kallsyms_seqs_of_names[] __weak;
+#endif
 
 static void *all_info_addr;
 static u32 all_info_size;
@@ -140,9 +143,15 @@ static int debug_kinfo_probe(struct platform_device *pdev)
 	info->bit_per_long = BITS_PER_LONG;
 	info->module_name_len = MODULE_NAME_LEN;
 	info->symbol_len = KSYM_SYMBOL_LEN;
-	info->_relative_pa = (u64)__pa_symbol((volatile void *)kallsyms_relative_base);
-	info->_offsets_pa = (u64)__pa_symbol((volatile void *)kallsyms_offsets);
-	info->_text_pa = (u64)__pa_symbol(_text);
+	if (!info->enabled_base_relative)
+		info->_addresses_pa = (u64)__pa_symbol((volatile void *)kallsyms_addresses);
+	else {
+		info->_relative_pa = (u64)__pa_symbol((volatile void *)kallsyms_relative_base);
+		info->_offsets_pa = (u64)__pa_symbol((volatile void *)kallsyms_offsets);
+#if IS_ENABLED(CONFIG_SEC_DEBUG_BUILT)
+		info->_addresses_pa = (u64)__pa_symbol((volatile void *)kallsyms_seqs_of_names);
+#endif
+	}
 	info->_stext_pa = (u64)__pa_symbol(_stext);
 	info->_etext_pa = (u64)__pa_symbol(_etext);
 	info->_sinittext_pa = (u64)__pa_symbol(_sinittext);

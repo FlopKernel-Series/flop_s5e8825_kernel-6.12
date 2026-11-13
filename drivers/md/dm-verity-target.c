@@ -16,6 +16,7 @@
 #include "dm-verity.h"
 #include "dm-verity-fec.h"
 #include "dm-verity-verify-sig.h"
+#include "dm-verity-debug.h"
 #include "dm-audit.h"
 #include <linux/module.h>
 #include <linux/reboot.h>
@@ -276,6 +277,7 @@ static void verity_hash_at_level(struct dm_verity *v, sector_t block, int level,
 /*
  * Handle verification errors.
  */
+#ifndef SEC_HEX_DEBUG
 static int verity_handle_err(struct dm_verity *v, enum verity_block_type type,
 			     unsigned long long block)
 {
@@ -328,6 +330,7 @@ out:
 
 	return 1;
 }
+#endif
 
 /*
  * Verify hash of a metadata block pertaining to the specified data block
@@ -543,6 +546,7 @@ static int verity_handle_data_hash_mismatch(struct dm_verity *v,
 		dm_audit_log_bio(DM_MSG_PREFIX, "verify-data", bio, blkno, 0);
 		return -EIO;
 	}
+#endif
 	return 0;
 }
 
@@ -1778,6 +1782,10 @@ static int verity_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->per_io_data_size = roundup(ti->per_io_data_size,
 				       __alignof__(struct dm_verity_io));
 
+#ifdef SEC_HEX_DEBUG
+	if (!verity_fec_is_enabled(v))
+		add_fec_off_cnt(v->data_dev->name);
+#endif
 	verity_verify_sig_opts_cleanup(&verify_args);
 
 	dm_audit_log_ctr(DM_MSG_PREFIX, ti, 1);
@@ -1786,6 +1794,9 @@ static int verity_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 bad:
 
+#ifdef SEC_HEX_DEBUG
+	add_fec_off_cnt("bad");
+#endif
 	verity_verify_sig_opts_cleanup(&verify_args);
 	dm_audit_log_ctr(DM_MSG_PREFIX, ti, 0);
 	verity_dtr(ti);

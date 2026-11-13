@@ -153,12 +153,23 @@ static int samsung_kbd_input_mapping(struct hid_device *hdev,
 	if (HID_UP_KEYBOARD == (usage->hid & HID_USAGE_PAGE)) {
 		set_bit(EV_REP, hi->input->evbit);
 		switch (usage->hid & HID_USAGE) {
+		/* Only for UK keyboard */
+		/* key found */
+#ifdef CONFIG_HID_KK_UPGRADE
+		case 0x32:
+			samsung_kbd_mouse_map_key_clear(KEY_KBDILLUMTOGGLE);
+			break;
+		case 0x64:
+			samsung_kbd_mouse_map_key_clear(KEY_BACKSLASH);
+			break;
+#else
 		case 0x32:
 			samsung_kbd_mouse_map_key_clear(KEY_BACKSLASH);
 			break;
 		case 0x64:
 			samsung_kbd_mouse_map_key_clear(KEY_102ND);
 			break;
+#endif
 		/* Only for BR keyboard */
 		case 0x87:
 			samsung_kbd_mouse_map_key_clear(KEY_RO);
@@ -291,7 +302,7 @@ static int samsung_gamepad_input_mapping(struct hid_device *hdev,
 			samsung_kbd_mouse_map_key_clear(BTN_THUMBR);
 			break;
 		case 0x10:
-			samsung_kbd_mouse_map_key_clear(0x13f);
+			samsung_kbd_mouse_map_key_clear(BTN_GAME);
 			break;
 		default:
 			return 0;
@@ -337,7 +348,7 @@ static int samsung_actionmouse_input_mapping(struct hid_device *hdev,
 
 	switch (usage->hid & HID_USAGE) {
 	case 0x301:
-		samsung_kbd_mouse_map_key_clear(254);
+		samsung_kbd_mouse_map_key_clear(KEY_RECENT);
 		break;
 	default:
 		return 0;
@@ -360,12 +371,23 @@ static int samsung_universal_kbd_input_mapping(struct hid_device *hdev,
 	if (HID_UP_KEYBOARD == (usage->hid & HID_USAGE_PAGE)) {
 		set_bit(EV_REP, hi->input->evbit);
 		switch (usage->hid & HID_USAGE) {
+		/* Only for UK keyboard */
+		/* key found */
+#ifdef CONFIG_HID_KK_UPGRADE
+		case 0x32:
+			samsung_kbd_mouse_map_key_clear(KEY_KBDILLUMTOGGLE);
+			break;
+		case 0x64:
+			samsung_kbd_mouse_map_key_clear(KEY_BACKSLASH);
+			break;
+#else
 		case 0x32:
 			samsung_kbd_mouse_map_key_clear(KEY_BACKSLASH);
 			break;
 		case 0x64:
 			samsung_kbd_mouse_map_key_clear(KEY_102ND);
 			break;
+#endif
 		/* Only for BR keyboard */
 		case 0x87:
 			samsung_kbd_mouse_map_key_clear(KEY_RO);
@@ -447,19 +469,19 @@ static int samsung_universal_kbd_input_mapping(struct hid_device *hdev,
 			break;
 		/* HotKey App 1 */
 		case 0x071:
-			samsung_kbd_mouse_map_key_clear(0x2f5);
+			samsung_kbd_mouse_map_key_clear(BTN_HOTKEY_APP1);
 			break;
 		/* HotKey App 2 */
 		case 0x072:
-			samsung_kbd_mouse_map_key_clear(0x2f6);
+			samsung_kbd_mouse_map_key_clear(BTN_HOTKEY_APP2);
 			break;
 		/* HotKey App 3 */
 		case 0x073:
-			samsung_kbd_mouse_map_key_clear(0x2f7);
+			samsung_kbd_mouse_map_key_clear(BTN_HOTKEY_APP3);
 			break;
 		/* Dex */
 		case 0x06e:
-			samsung_kbd_mouse_map_key_clear(0x2bd);
+			samsung_kbd_mouse_map_key_clear(KEY_DEX_ON);
 			break;
 		default:
 			return 0;
