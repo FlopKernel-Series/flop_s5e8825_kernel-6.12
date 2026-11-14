@@ -3842,8 +3842,7 @@ static void sm5714_usbpd_debug_reg_log(struct work_struct *work)
 				msecs_to_jiffies(60000));
 }
 
-static int sm5714_usbpd_probe(struct i2c_client *i2c,
-				const struct i2c_device_id *id)
+static int sm5714_usbpd_probe(struct i2c_client *i2c)
 {
 	struct i2c_adapter *adapter = to_i2c_adapter(i2c->dev.parent);
 	struct sm5714_phydrv_data *pdic_data;

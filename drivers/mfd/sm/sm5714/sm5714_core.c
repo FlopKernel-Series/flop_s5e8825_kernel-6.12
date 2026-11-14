@@ -276,7 +276,7 @@ static int of_sm5714_dt(struct device *dev, struct sm5714_platform_data *pdata)
 }
 #endif /* CONFIG_OF */
 
-static int sm5714_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id *dev_id)
+static int sm5714_i2c_probe(struct i2c_client *i2c)
 {
 	struct sm5714_dev *sm5714;
 	struct sm5714_platform_data *pdata = i2c->dev.platform_data;
