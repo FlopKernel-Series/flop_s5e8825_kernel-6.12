@@ -420,7 +420,7 @@ err:
     return ret;
 }
 
-static int sm5714_i2c_remove(struct i2c_client *i2c)
+static void sm5714_i2c_remove(struct i2c_client *i2c)
 {
 	struct sm5714_dev *sm5714 = i2c_get_clientdata(i2c);
 
@@ -433,8 +433,6 @@ static int sm5714_i2c_remove(struct i2c_client *i2c)
     mutex_destroy(&sm5714->i2c_lock);
 
     kfree(sm5714);
-
-	return 0;
 }
 
 static const struct i2c_device_id sm5714_i2c_id[] = {

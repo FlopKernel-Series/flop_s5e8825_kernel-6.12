@@ -4181,7 +4181,7 @@ static int sm5714_usbpd_resume(struct device *dev)
 }
 #endif
 
-static int sm5714_usbpd_remove(struct i2c_client *i2c)
+static void sm5714_usbpd_remove(struct i2c_client *i2c)
 {
 	struct sm5714_usbpd_data *pd_data = dev_get_drvdata(&i2c->dev);
 	struct sm5714_phydrv_data *_data = pd_data->phy_driver_data;
@@ -4211,7 +4211,6 @@ static int sm5714_usbpd_remove(struct i2c_client *i2c)
 #endif
 		kfree(_data);
 	}
-	return 0;
 }
 
 static const struct i2c_device_id sm5714_usbpd_i2c_id[] = {
