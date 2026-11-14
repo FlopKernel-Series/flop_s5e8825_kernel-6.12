@@ -382,3 +382,4 @@ source "drivers/battery/charger/s2mf301_charger/Kconfig"
 source "drivers/battery/common/Kconfig"
 
 source "drivers/samsung/Kconfig"
+source "drivers/battery/charger/hl7132_charger/Kconfig"
