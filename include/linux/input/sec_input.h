@@ -748,6 +748,9 @@ struct sec_ts_plat_data {
 	bool blocking_palm;
 	atomic_t touch_noise_status;
 	atomic_t touch_pre_noise_status;
+	int gesture_id;
+	int gesture_x;
+	int gesture_y;
 
 	struct sec_ts_fod_data fod_data;
 	struct sec_ts_aod_data aod_data;

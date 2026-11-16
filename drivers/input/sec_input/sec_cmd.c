@@ -1343,6 +1343,12 @@ void sec_cmd_send_gesture_uevent(struct sec_cmd_data *data, int type, int x, int
 
 	plat_data = data->dev->platform_data;
 
+	if (plat_data) {
+		plat_data->gesture_id = type;
+		plat_data->gesture_x = x;
+		plat_data->gesture_y = y;
+	}
+
 	snprintf(test, sizeof(test), "GESTURE=%d", type);
 	snprintf(result, sizeof(result), "POS=%d,%d", x, y);
 
