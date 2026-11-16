@@ -393,3 +393,4 @@ source "drivers/mfd/sm/sm5714/Kconfig"
 
 source "drivers/usb/typec/sm/sm5714/Kconfig"
 source "drivers/battery/charger/sm5451_charger/Kconfig"
+source "drivers/input/touchscreen/himax/hx83xxx_spi/Kconfig"
