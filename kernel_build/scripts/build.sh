@@ -25,7 +25,12 @@ build() {
     rm -rf "$MOD_OUTDIR" 2>/dev/null
 
     # Build config fragments list
-    FRAGMENTS=""
+    # s5e8825_base.config carries what every board of the SoC shares, so it
+    # is merged both in a normal build and when regenerating the defconfig.
+    # The per-device fragment is only merged in a normal build, otherwise its
+    # choices end up baked into the shared defconfig.
+    FRAGMENTS=" s5e8825_base.config"
+    [ "$DO_REGEN" != "1" ] && FRAGMENTS="$FRAGMENTS $DEVICE_FRAGMENT"
     [ "$DO_KSU" = "1" ] && FRAGMENTS="$FRAGMENTS ksu.config"
     [ "$DO_SUKI" = "1" ] && FRAGMENTS="$FRAGMENTS sukisu.config"
     [ "$DO_XXKSU" = "1" ] && FRAGMENTS="$FRAGMENTS xxksu.config"
@@ -34,9 +39,9 @@ build() {
     [ "$KCFI" = "1" ] && [ "$DO_REGEN" != "1" ] && FRAGMENTS="$FRAGMENTS kcfi.config"
 
     if [ "$DO_QUIET" = "1" ]; then
-        make -j$(nproc --all) O=$OUTDIR CC="$CC" "$DEFCONFIG" $FRAGMENTS > /dev/null | tee log.txt
+        make O=$OUTDIR CC="$CC" "$DEFCONFIG" $FRAGMENTS > /dev/null | tee log.txt
     else
-        make -j$(nproc --all) O=$OUTDIR CC="$CC" "$DEFCONFIG" $FRAGMENTS 2>&1 | tee log.txt
+        make O=$OUTDIR CC="$CC" "$DEFCONFIG" $FRAGMENTS 2>&1 | tee log.txt
     fi
 
     if [ "$IS_RELEASE" = "1" ]; then
