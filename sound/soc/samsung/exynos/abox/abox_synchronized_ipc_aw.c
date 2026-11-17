@@ -531,12 +531,16 @@ static int samsung_abox_synchronized_ipc_aw_probe(struct platform_device *pdev)
 	}
 
 	pdev_abox = of_find_device_by_node(np_abox);
-	data->dev_abox = &pdev_abox->dev;
-	if (!data->dev_abox) {
+	if (!pdev_abox) {
 		dev_err(dev, "[SYNC_IPC] Failed to get abox platform device\n");
 		return -EPROBE_DEFER;
 	}
+	data->dev_abox = &pdev_abox->dev;
 	data->abox_data = platform_get_drvdata(pdev_abox);
+	if (!data->abox_data) {
+		dev_err(dev, "[SYNC_IPC] abox driver not probed yet\n");
+		return -EPROBE_DEFER;
+	}
 
 	abox_register_ipc_handler(data->dev_abox, IPC_ERAP,
 				abox_synchronized_ipc_aw_handler, pdev);
