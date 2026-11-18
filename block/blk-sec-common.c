@@ -92,14 +92,14 @@ static struct gendisk *find_internal_disk(void)
 
 	for (idx = 0; idx < MAJOR8_DEV_NUM; idx++) {
 		devno = MKDEV(SCSI_DISK0_MAJOR, SCSI_MINORS * idx);
-		bdev = blkdev_get_by_dev(devno, BLK_OPEN_READ, NULL, NULL);
-		if (IS_ERR(bdev))
+		bdev = blkdev_get_no_open(devno);
+		if (!bdev)
 			continue;
 
 		if (bdev->bd_disk && is_internal_bdev(bdev))
 			gd = bdev->bd_disk;
 
-		blkdev_put(bdev, NULL);
+		blkdev_put_no_open(bdev);
 
 		if (gd)
 			return gd;
@@ -107,14 +107,14 @@ static struct gendisk *find_internal_disk(void)
 
 	for (idx = 0; idx < MMC_TARGET_DEV; idx++) {
 		devno = MKDEV(MMC_BLOCK_MAJOR, MMC_MINORS * idx);
-		bdev = blkdev_get_by_dev(devno, BLK_OPEN_READ, NULL, NULL);
-		if (IS_ERR(bdev))
+		bdev = blkdev_get_no_open(devno);
+		if (!bdev)
 			continue;
 
 		if (bdev->bd_disk && is_internal_bdev(bdev))
 			gd = bdev->bd_disk;
 
-		blkdev_put(bdev, NULL);
+		blkdev_put_no_open(bdev);
 
 		if (gd)
 			return gd;
