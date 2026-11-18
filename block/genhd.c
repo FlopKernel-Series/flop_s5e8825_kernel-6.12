@@ -350,7 +350,7 @@ void disk_uevent(struct gendisk *disk, enum kobject_action action)
 		kobject_uevent(bdev_kobj(part), action);
 		if (action == KOBJ_ADD) {
 			ST_LOG("<%s> KOBJ_ADD %d:%d", __func__, major,
-					first_minor + part->bd_partno);
+					first_minor + bdev_partno(part));
 		}
 
 		put_device(&part->bd_device);
