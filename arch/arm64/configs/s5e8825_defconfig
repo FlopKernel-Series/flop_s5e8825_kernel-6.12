@@ -8114,7 +8114,7 @@ CONFIG_SEC_VIBRATOR=m
 #
 # Enable Dropdump to logging dropped network packet
 #
-CONFIG_SUPPORT_DROPDUMP=m
+# CONFIG_SUPPORT_DROPDUMP is not set
 
 #
 # MUIC configs
