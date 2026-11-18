@@ -862,7 +862,6 @@ static struct elevator_type ssg_iosched = {
 	.elevator_attrs = ssg_attrs,
 	.elevator_name = "ssg",
 	.elevator_alias = "ssg",
-	.elevator_features = ELEVATOR_F_ZBD_SEQ_WRITE,
 	.elevator_owner = THIS_MODULE,
 };
 MODULE_ALIAS("ssg");
