@@ -155,7 +155,7 @@ static void release_records(void)
 }
 
 /* change the current status, and do the init jobs for the status */
-static void change_current_status(enum io_record_cmd_types status)
+static bool change_current_status(enum io_record_cmd_types status)
 {
 	switch (status) {
 	case IO_RECORD_INIT:
@@ -163,9 +163,26 @@ static void change_current_status(enum io_record_cmd_types status)
 		set_record_target(-1);
 		release_records();
 		atomic_set(&record_buf_cursor, 0);
-		result_buf_cursor = result_buf;
+		if (result_buf) {
+			vfree(result_buf);
+			result_buf = NULL;
+		}
+		result_buf_cursor = NULL;
+		if (record_buf) {
+			vfree(record_buf);
+			record_buf = NULL;
+		}
 		break;
 	case IO_RECORD_START:
+		if (!record_buf) {
+			/* __vmalloc + memset: vzalloc does not support __GFP_RETRY_MAYFAIL */
+			record_buf = __vmalloc(sizeof(struct io_info) * NUM_IO_INFO_IN_BUF, GFP_KERNEL | __GFP_RETRY_MAYFAIL);
+			if (!record_buf) {
+				pr_err("io_record: failed to allocate record_buf\n");
+				return false;
+			}
+			memset(record_buf, 0, sizeof(struct io_info) * NUM_IO_INFO_IN_BUF);
+		}
 		set_record_enable(true);
 		break;
 	case IO_RECORD_STOP:
@@ -175,6 +192,7 @@ static void change_current_status(enum io_record_cmd_types status)
 		break;
 	}
 	current_status = status;
+	return true;
 }
 
 /*
@@ -185,16 +203,13 @@ static inline bool change_status_if_valid(enum io_record_cmd_types next_status)
 {
 	bool ret = false;
 
-	if (!record_buf)
-		return ret;
-
 	if (next_status == IO_RECORD_INIT &&
 	    current_status != IO_RECORD_POST_PROCESSING)
 		ret = true;
 	else if (next_status == current_status + 1)
 		ret = true;
 	if (ret)
-		change_current_status(next_status);
+		ret = change_current_status(next_status);
 
 	return ret;
 }
@@ -250,6 +265,20 @@ static bool post_processing_records(void)
 	if (!change_status_if_valid(IO_RECORD_POST_PROCESSING))
 		goto out;
 
+	if (!result_buf) {
+		/* __vmalloc + memset: vzalloc does not support __GFP_RETRY_MAYFAIL */
+		result_buf = __vmalloc(RESULT_BUF_SIZE_IN_BYTES, GFP_KERNEL | __GFP_RETRY_MAYFAIL);
+		if (!result_buf) {
+			pr_err("io_record: failed to allocate result_buf\n");
+			if (!change_current_status(IO_RECORD_INIT)) {
+				pr_err("io_record: failed to reset to INIT\n");
+			}
+			goto out;
+		}
+		memset(result_buf, 0, RESULT_BUF_SIZE_IN_BYTES);
+	}
+	result_buf_cursor = result_buf;
+
 	/* From this point, we assume that no one touches record buf */
 	/* sort based on inode pointer address */
 	sort(record_buf, atomic_read(&record_buf_cursor),
@@ -300,6 +329,9 @@ static void io_record_store(struct file *file, pgoff_t offset, int nr_pages)
 	if (!__get_record_status())
 		goto out;
 
+	if (!record_buf)
+		goto out;
+
 	/* strict check */
 	if (task_tgid_nr(current) != record_target)
 		goto out;
@@ -330,6 +362,11 @@ ssize_t io_record_read(char __user *buf, size_t count, loff_t *ppos)
 
 	mutex_lock(&status_lock);
 	if (current_status != IO_RECORD_POST_PROCESSING_DONE) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+	if (!result_buf || !result_buf_cursor) {
 		ret = -EFAULT;
 		goto out;
 	}
@@ -366,7 +403,7 @@ bool io_record_write(struct task_struct *task, int type)
 	return false;
 }
 
-static void io_record_ksys_umount(void *data, char __user *name, int flags)
+void io_record_reset(void)
 {
 	int loopnum = 1;
 
@@ -388,10 +425,11 @@ static void io_record_do_read_fault(void *data, struct vm_fault *vmf,
 }
 
 static void io_record_filemap_map_pages(void *data, struct file *file,
-		pgoff_t first_pgoff, pgoff_t last_pgoff, vm_fault_t ret)
+		pgoff_t orig_start_pgoff, pgoff_t first_pgoff,
+		pgoff_t last_pgoff, vm_fault_t ret)
 {
 	if (ret == VM_FAULT_NOPAGE)
-		io_record_store(file, first_pgoff, last_pgoff - first_pgoff + 1);
+		io_record_store(file, orig_start_pgoff, last_pgoff - orig_start_pgoff + 1);
 }
 
 static void io_record_filemap_read(void *data, struct file *file,
@@ -403,16 +441,6 @@ static void io_record_filemap_read(void *data, struct file *file,
 
 static int __init io_record_init(void)
 {
-	record_buf = vzalloc(sizeof(struct io_info) * NUM_IO_INFO_IN_BUF);
-	if (!record_buf)
-		return -ENOMEM;
-
-	result_buf = vzalloc(RESULT_BUF_SIZE_IN_BYTES);
-	if (!result_buf) {
-		vfree(record_buf);
-		return -ENOMEM;
-	}
-
 	mutex_lock(&status_lock);
 	change_status_if_valid(IO_RECORD_INIT);
 	mutex_unlock(&status_lock);
@@ -423,15 +451,15 @@ static int __init io_record_init(void)
 			io_record_filemap_map_pages, NULL);
 	register_trace_android_vh_filemap_read(
 			io_record_filemap_read, NULL);
-	register_trace_android_rvh_ksys_umount(
-			io_record_ksys_umount, NULL);
 	return 0;
 }
 
 static void __exit io_record_exit(void)
 {
-	vfree(record_buf);
-	vfree(result_buf);
+	if (record_buf)
+		vfree(record_buf);
+	if (result_buf)
+		vfree(result_buf);
 
 	unregister_trace_android_vh_do_read_fault(
 			io_record_do_read_fault, NULL);

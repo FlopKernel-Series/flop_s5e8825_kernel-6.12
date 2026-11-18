@@ -6,6 +6,7 @@
 
 ssize_t io_record_read(char __user *buf, size_t count, loff_t *ppos);
 bool io_record_write(struct task_struct *task, int type);
+void io_record_reset(void);
 
 extern const struct file_operations proc_pid_filemap_list_ops;
 extern const struct file_operations proc_pid_io_record_ops;
