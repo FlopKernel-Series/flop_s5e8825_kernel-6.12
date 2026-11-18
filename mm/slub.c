@@ -1166,16 +1166,6 @@ static void object_err(struct kmem_cache *s, struct slab *slab,
 		return;
 
 	slab_bug(s, reason);
-#ifdef CONFIG_SEC_DEBUG_BUG_ON_SLUB_CORRUPTION
-static inline void secdbg_slub_bug(void)
-{
-	BUG();
-}
-#else
-static inline void secdbg_slub_bug(void)
-{
-}
-#endif
 	if (!object || !check_valid_pointer(s, slab, object)) {
 		print_slab_info(slab);
 		pr_err("Invalid pointer 0x%p\n", object);

@@ -22,6 +22,7 @@
  */
 extern const int kallsyms_offsets[] __weak;
 extern const u8 kallsyms_names[] __weak;
+extern const unsigned long kallsyms_addresses[] __weak;
 extern const u8 kallsyms_seqs_of_names[] __weak;
 
 /*
@@ -138,6 +139,7 @@ static int debug_kinfo_probe(struct platform_device *pdev)
 	info->enabled_all = IS_ENABLED(CONFIG_KALLSYMS_ALL);
 	info->enabled_absolute_percpu = IS_ENABLED(CONFIG_KALLSYMS_ABSOLUTE_PERCPU);
 	info->enabled_cfi_clang = IS_ENABLED(CONFIG_CFI_CLANG);
+	info->enabled_base_relative = IS_ENABLED(CONFIG_KALLSYMS_BASE_RELATIVE);
 	info->num_syms = kallsyms_num_syms;
 	info->name_len = KSYM_NAME_LEN;
 	info->bit_per_long = BITS_PER_LONG;

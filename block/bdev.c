@@ -825,6 +825,8 @@ void blkdev_put_no_open(struct block_device *bdev)
 	put_device(&bdev->bd_device);
 }
 
+EXPORT_SYMBOL_GPL(blkdev_put_no_open);
+
 static bool bdev_writes_blocked(struct block_device *bdev)
 {
 	return bdev->bd_writers < 0;
@@ -1046,6 +1048,8 @@ struct file *bdev_file_open_by_dev(dev_t dev, blk_mode_t mode, void *holder,
 	}
 	return bdev_file;
 }
+
+EXPORT_SYMBOL_GPL(blkdev_get_no_open);
 EXPORT_SYMBOL(bdev_file_open_by_dev);
 
 struct file *bdev_file_open_by_path(const char *path, blk_mode_t mode,

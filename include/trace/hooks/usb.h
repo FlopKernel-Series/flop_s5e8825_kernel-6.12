@@ -12,6 +12,10 @@
 
 struct usb_device;
 
+DECLARE_HOOK(android_vh_configfs_uevent_work,
+	TP_PROTO(bool connected, bool disconnected, bool configured, bool uevent_sent),
+	TP_ARGS(connected, disconnected, configured, uevent_sent));
+
 /*
  * Following tracepoints are not exported in tracefs and provide a
  * mechanism for vendor modules to hook and extend functionality

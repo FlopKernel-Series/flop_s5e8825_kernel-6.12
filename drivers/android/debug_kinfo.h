@@ -28,6 +28,7 @@ struct kernel_info {
 	__u16 bit_per_long;
 	__u16 module_name_len;
 	__u16 symbol_len;
+	__u64 _addresses_pa;
 	__u64 _relative_pa;
 	__u64 _text_pa;
 	__u64 _stext_pa;

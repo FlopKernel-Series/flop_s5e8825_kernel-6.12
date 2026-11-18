@@ -1920,7 +1920,6 @@ err:
 
 	pr_err("%s: error %d whilst initialising SD card\n",
 		mmc_hostname(host), err);
-	trace_android_vh_mmc_attach_sd(host, err);
 	ST_LOG("%s: error %d whilst initialising SD card\n",
 		mmc_hostname(host), err);
 
