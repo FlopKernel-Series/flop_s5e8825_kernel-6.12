@@ -89,7 +89,7 @@ static int try_to_freeze_tasks(bool user_only)
 	elapsed_msecs = ktime_to_ms(elapsed);
 
 	if (todo) {
-		pr_err("Freezing %s %s after %d.%03d seconds "
+		pr_auto_on(!wakeup, ASL1, "Freezing %s %s after %d.%03d seconds "
 		       "(%d tasks refusing to freeze, wq_busy=%d):\n", what,
 		       wakeup ? "aborted" : "failed",
 		       elapsed_msecs / 1000, elapsed_msecs % 1000,
@@ -103,7 +103,7 @@ static int try_to_freeze_tasks(bool user_only)
 			for_each_process_thread(g, p) {
 				if (p != current && freezing(p) && !frozen(p)) {
 #if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT)
-					sched_show_task_auto_comment(p);
+					sched_show_task_auto_comment_on(!wakeup, p);
 #else
 					sched_show_task(p);
 #endif

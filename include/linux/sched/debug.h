@@ -38,9 +38,20 @@ extern void show_stack(struct task_struct *task, unsigned long *sp,
 
 extern void sched_show_task(struct task_struct *p);
 
-#if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT)
+#if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT) && IS_ENABLED(CONFIG_ARM64)
 extern void show_stack_auto_comment(struct task_struct *task, unsigned long *sp);
+#else
+static inline void show_stack_auto_comment(struct task_struct *task, unsigned long *sp) {}
+#endif
+#if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT)
 extern void sched_show_task_auto_comment(struct task_struct *p);
+#define sched_show_task_auto_comment_on(__cond, p)	\
+({							\
+	if (__cond)					\
+		sched_show_task_auto_comment(p);	\
+	else						\
+		sched_show_task(p);			\
+})
 #endif
 
 #ifdef CONFIG_SCHED_DEBUG
