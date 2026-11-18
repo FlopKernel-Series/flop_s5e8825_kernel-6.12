@@ -12,10 +12,12 @@
 #include <linux/uaccess.h>
 #include <linux/string.h>
 
-#include "ems.h"
+#include <soc/samsung/ems.h>
 
 #include <trace/events/ems.h>
 #include <trace/events/ems_debug.h>
+
+#include <kunit/visibility.h>
 
 /******************************************************************************
  * data structure and API                                                     *
@@ -47,13 +49,13 @@ struct boost_groups {
 
 static raw_spinlock_t __percpu *lock;
 
-static inline bool freqboost_boost_timeout(u64 now, u64 ts, u64 timeout)
+VISIBLE_IF_KUNIT inline bool freqboost_boost_timeout(u64 now, u64 ts, u64 timeout)
 {
 	return ((now - ts) > timeout);
 }
+EXPORT_SYMBOL_IF_KUNIT(freqboost_boost_timeout);
 
-static inline bool
-freqboost_boost_group_active(int idx, struct boost_groups *bg, u64 now)
+static inline bool freqboost_boost_group_active(int idx, struct boost_groups *bg, u64 now)
 {
 	if (bg->group[idx].tasks)
 		return true;
@@ -61,8 +63,7 @@ freqboost_boost_group_active(int idx, struct boost_groups *bg, u64 now)
 	return !freqboost_boost_timeout(now, bg->group[idx].ts, bg->timeout);
 }
 
-static void
-freqboost_group_update(struct boost_groups *bg, u64 now)
+static void freqboost_group_update(struct boost_groups *bg, u64 now)
 {
 	int boost_max = INT_MIN;
 	u64 boost_ts = 0;
@@ -91,8 +92,7 @@ freqboost_group_update(struct boost_groups *bg, u64 now)
 
 struct reciprocal_value freqboost_spc_rdiv;
 
-static long
-freqboost_margin(unsigned long capacity, unsigned long signal, long boost)
+static long freqboost_margin(unsigned long capacity, unsigned long signal, long boost)
 {
 	long long margin = 0;
 
@@ -110,23 +110,22 @@ freqboost_margin(unsigned long capacity, unsigned long signal, long boost)
 	if (boost >= 0) {
 		margin  = capacity - signal;
 		margin *= boost;
-	} else
+	} else {
 		margin = -signal * boost;
+	}
 
 	margin  = reciprocal_divide(margin, freqboost_spc_rdiv);
 
 	if (boost < 0)
 		margin *= -1;
+
 	return margin;
 }
 
-static unsigned long
-freqboost_boosted_util(struct boost_groups *bg, int cpu, unsigned long util)
+static unsigned long freqboost_boosted_util(struct boost_groups *bg, int cpu, unsigned long util)
 {
-	u64 now;
 	long boost, margin = 0;
-
-	now = sched_clock();
+	u64 now = sched_clock();
 
 	/* Check to see if we have a hold in effect */
 	if (freqboost_boost_timeout(now, bg->boost_ts, bg->timeout))
@@ -136,7 +135,7 @@ freqboost_boosted_util(struct boost_groups *bg, int cpu, unsigned long util)
 	if (!boost || boost == INT_MIN)
 		goto out;
 
-	margin = freqboost_margin(capacity_cpu(cpu), util, boost);
+	margin = freqboost_margin(ems_get_actual_cpu_capacity(cpu), util, boost);
 
 out:
 	trace_freqboost_boosted_util(cpu, boost, util, margin);
@@ -153,15 +152,18 @@ static struct boost_groups __percpu *freqboost_groups;
 /* We hold freqboost in effect for at least this long */
 #define FREQBOOST_HOLD_NS 50000000ULL	/* 50ms */
 
-static inline bool
-freqboost_update_timestamp(struct task_struct *p)
+static inline bool freqboost_task_cgroup_changed(struct task_struct *p)
 {
-	return task_has_rt_policy(p);
+	return cpuctl_task_group_idx(p) != ems_prev_cgroup(p);
 }
 
-static inline void
-freqboost_tasks_update(struct task_struct *p, int cpu,
-				int idx, int flags, int task_count)
+static inline bool freqboost_update_timestamp(struct task_struct *p)
+{
+	return task_has_rt_policy(p) || freqboost_task_cgroup_changed(p);
+}
+
+static inline void freqboost_tasks_update(struct task_struct *p, int cpu,
+		int idx, int flags, int task_count)
 {
 	struct boost_groups *bg = per_cpu_ptr(freqboost_groups, cpu);
 	int tasks = bg->group[idx].tasks + task_count;
@@ -202,22 +204,20 @@ unsigned long heavytask_cpu_boost(int cpu, unsigned long util, int ratio)
 
 	boost = (hratio * ratio) >> SCHED_CAPACITY_SHIFT;
 	boost = min(boost, 100);
-	margin = freqboost_margin(capacity_cpu(cpu), util, boost);
+	margin = freqboost_margin(ems_get_actual_cpu_capacity(cpu), util, boost);
 
 out:
-	trace_freqboost_htsk_boosted_util(cpu, hratio,
-				ratio, boost, util, margin);
+	trace_freqboost_htsk_boosted_util(cpu, hratio, ratio, boost, util, margin);
+
 	return util + margin;
 }
 
 /******************************************************************************
  * common                                                                     *
  ******************************************************************************/
-static void
-freqboost_enqdeq_task(struct task_struct *p, int cpu, int flags, int type)
+static void freqboost_enqdeq_task(struct task_struct *p, int cpu, int cgroup_idx, int flags, int type)
 {
 	unsigned long irq_flags;
-	int idx;
 
 	/*
 	 * Boost group accouting is protected by a per-cpu lock and requires
@@ -225,11 +225,7 @@ freqboost_enqdeq_task(struct task_struct *p, int cpu, int flags, int type)
 	 * do_exit()::cgroup_exit() and task migration.
 	 */
 	raw_spin_lock_irqsave(per_cpu_ptr(lock, cpu), irq_flags);
-
-	idx = cpuctl_task_group_idx(p);
-
-	freqboost_tasks_update(p, cpu, idx, flags, type);
-
+	freqboost_tasks_update(p, cpu, cgroup_idx, flags, type);
 	raw_spin_unlock_irqrestore(per_cpu_ptr(lock, cpu), irq_flags);
 }
 
@@ -238,88 +234,17 @@ freqboost_enqdeq_task(struct task_struct *p, int cpu, int flags, int type)
 
 void freqboost_enqueue_task(struct task_struct *p, int cpu, int flags)
 {
-	freqboost_enqdeq_task(p, cpu, flags, ENQUEUE_TASK);
+	int cgroup_idx = cpuctl_task_group_idx(p);
+
+	freqboost_enqdeq_task(p, cpu, cgroup_idx, flags, ENQUEUE_TASK);
+	ems_prev_cgroup(p) = cgroup_idx;
 }
 
 void freqboost_dequeue_task(struct task_struct *p, int cpu, int flags)
 {
-	freqboost_enqdeq_task(p, cpu, flags, DEQUEUE_TASK);
-}
+	int cgroup_idx = ems_prev_cgroup(p);
 
-int freqboost_can_attach(struct cgroup_taskset *tset)
-{
-	struct task_struct *task;
-	struct cgroup_subsys_state *css;
-	struct boost_groups *bg;
-	struct rq_flags rq_flags;
-	unsigned int cpu;
-	struct rq *rq;
-	int src_bg; /* Source boost group index */
-	int dst_bg; /* Destination boost group index */
-	int tasks;
-	u64 now;
-
-	cgroup_taskset_for_each(task, css, tset) {
-		/*
-		 * Lock the CPU's RQ the task is enqueued to avoid race
-		 * conditions with migration code while the task is being
-		 * accounted
-		 */
-		rq = task_rq_lock(task, &rq_flags);
-
-		if (!task->on_rq) {
-			task_rq_unlock(rq, task, &rq_flags);
-			continue;
-		}
-
-		/*
-		 * Boost group accouting is protected by a per-cpu lock and requires
-		 * interrupt to be disabled to avoid race conditions on...
-		 */
-		cpu = cpu_of(rq);
-		bg = per_cpu_ptr(freqboost_groups, cpu);
-		raw_spin_lock(per_cpu_ptr(lock, cpu));
-
-		dst_bg = css->id - 1;
-
-		/* if customer add new group, use the last group */
-		if (dst_bg >= CGROUP_COUNT)
-			dst_bg = CGROUP_COUNT - 1;
-
-		src_bg = cpuctl_task_group_idx(task);
-
-		/*
-		 * Current task is not changing boostgroup, which can
-		 * happen when the new hierarchy is in use.
-		 */
-		if (unlikely(dst_bg == src_bg)) {
-			raw_spin_unlock(per_cpu_ptr(lock, cpu));
-			task_rq_unlock(rq, task, &rq_flags);
-			continue;
-		}
-
-		/*
-		 * This is the case of a RUNNABLE task which is switching its
-		 * current boost group.
-		 */
-
-		/* Move task from src to dst boost group */
-		tasks = bg->group[src_bg].tasks - 1;
-		bg->group[src_bg].tasks = max(0, tasks);
-		bg->group[dst_bg].tasks += 1;
-
-		/* Update boost hold start for this group */
-		now = sched_clock();
-		bg->group[dst_bg].ts = now;
-
-		/* Force boost group re-evaluation at next boost check */
-		bg->boost_ts = now - FREQBOOST_HOLD_NS;
-
-		raw_spin_unlock(per_cpu_ptr(lock, cpu));
-		task_rq_unlock(rq, task, &rq_flags);
-	}
-
-	return 0;
+	freqboost_enqdeq_task(p, cpu, cgroup_idx, flags, DEQUEUE_TASK);
 }
 
 int freqboost_get_task_ratio(struct task_struct *p)
@@ -332,14 +257,38 @@ int freqboost_get_task_ratio(struct task_struct *p)
 	return fbg->group[st_idx].boost;
 }
 
+struct emstune_set *emstune_cur;
+void freqboost_set_boost_ratio(int tcpu, int grp, int boost)
+{
+	int cpu;
+
+	if (grp >= CGROUP_COUNT)
+		return;
+
+	for_each_cpu(cpu, cpu_clustergroup_mask(tcpu)) {
+		struct boost_groups *fbg;
+		fbg = per_cpu_ptr(freqboost_groups, cpu);
+
+		if (boost != INT_MIN)
+			fbg->group[grp].boost = boost;
+		else
+			fbg->group[grp].boost =
+				emstune_cur->freqboost.ratio[grp][tcpu];
+	}
+}
+
 static int freqboost_emstune_notifier_call(struct notifier_block *nb,
-				unsigned long val, void *v)
+		unsigned long val, void *v)
 {
 	struct emstune_set *cur_set = (struct emstune_set *)v;
-	struct boost_groups *fbg;
-	int i, cpu;
+	int cpu;
+
+	emstune_cur = cur_set;
 
 	for_each_possible_cpu(cpu) {
+		struct boost_groups *fbg;
+		int i;
+
 		fbg = per_cpu_ptr(freqboost_groups, cpu);
 
 		for (i = 0; i < CGROUP_COUNT; i++)
@@ -353,14 +302,14 @@ static struct notifier_block freqboost_emstune_notifier = {
 	.notifier_call = freqboost_emstune_notifier_call,
 };
 
-static inline void
-freqboost_init_cgroups(void)
+static inline void freqboost_init_cgroups(void)
 {
-	struct boost_groups *bg;
 	int cpu;
 
 	/* Initialize the per CPU boost groups */
 	for_each_possible_cpu(cpu) {
+		struct boost_groups *bg;
+
 		bg = per_cpu_ptr(freqboost_groups, cpu);
 		memset(bg, 0, sizeof(struct boost_groups));
 		bg->timeout = FREQBOOST_HOLD_NS;
@@ -384,3 +333,4 @@ int freqboost_init(void)
 
 	return 0;
 }
+

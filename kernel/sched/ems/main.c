@@ -1,23 +1,203 @@
 /*
  * Core Exynos Mobile Scheduler
  *
- * Copyright (C) 2018 Samsung Electronics Co., Ltd
- * Park Bumgyu <bumgyu.park@samsung.com>
+ * Copyright (C) 2022 Samsung Electronics Co., Ltd
  */
 
 #include <linux/pm_qos.h>
 #include <linux/platform_device.h>
 #include <linux/miscdevice.h>
 #include <linux/panic_notifier.h>
-#include <linux/sched/isolation.h>
+#include <linux/version.h>
 
-#include "ems.h"
+#include <soc/samsung/ems.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/ems.h>
 #include <trace/events/ems_debug.h>
 
 #include <dt-bindings/soc/samsung/ems.h>
+
+static bool init_done = false;
+
+bool ems_disabled(void)
+{
+	return !init_done;
+}
+/******************************************************************************
+ * Functions for handling task attribute                                      *
+ ******************************************************************************/
+static int high_prio_threshold[CGROUP_COUNT];
+
+static bool launch_boost_condition(struct task_struct *p)
+{
+	if (emstune_get_cur_level() == EMS_LEVEL_NORMAL)
+		return false;
+
+	if (get_sched_class(p) != EMS_SCHED_FAIR)
+		return false;
+
+	if (cpuctl_task_group_idx(p) != CGROUP_TOPAPP)
+		return false;
+
+	return true;
+}
+
+bool is_render_task(struct task_struct *p)
+{
+	if (!launch_boost_condition(p))
+		return false;
+
+	if (!emstune_task_boost())
+		return false;
+
+	return ems_render_task(p);
+}
+
+bool is_zygote_task(struct task_struct *p)
+{
+	if (!launch_boost_condition(p))
+		return false;
+
+	if (emstune_task_boost())
+		return false;
+
+	if (strcmp(p->comm, "main"))
+		return false;
+
+	return true;
+}
+
+bool is_launch_task(struct task_struct *p)
+{
+	if (ems_boosted_by_user(p))
+		return true;
+
+	/* boost high prio RenderThread */
+	if (is_render_task(p) && p->prio <= TA_BOOST_PRIO)
+		return true;
+
+	/* boost zygote */
+	if (is_zygote_task(p))
+		return true;
+
+	return false;
+}
+
+bool is_low_latency_task(struct task_struct *p)
+{
+	return ems_binder_task(p) || ems_low_latency_task(p);
+}
+
+bool is_high_prio_task(struct task_struct *p)
+{
+	int group_idx;
+
+	if (get_sched_class(p) != EMS_SCHED_FAIR)
+		return false;
+
+	group_idx = cpuctl_task_group_idx(p);
+
+	return p->prio <= high_prio_threshold[group_idx];
+}
+
+bool is_important_task(struct task_struct *p)
+{
+	if (is_launch_task(p))
+		return true;
+
+	if (is_reserved_task(p))
+		return true;
+
+	if (is_low_latency_task(p))
+		return true;
+
+	if (is_render_task(p))
+		return true;
+
+	if (is_high_prio_task(p))
+		return true;
+
+	return false;
+}
+
+bool is_io_boost_task(struct task_struct *p)
+{
+	return emstune_sched_io_boost() && is_top_app_task(p);
+}
+
+void check_enqueue_task_attr(struct rq *rq, struct task_struct *p)
+{
+	if (get_sched_class(p) != EMS_SCHED_FAIR)
+		return;
+
+	if (is_launch_task(p)) {
+		ems_launch_task(p) = 1;
+		ems_rq_nr_launch(rq) += 1;
+	}
+
+	if (get_reserved_cpu(p) >= 0) {
+		ems_reserved_task(p) = 1;
+		ems_rq_nr_reserved_task(rq) += 1;
+	}
+
+	if (is_high_prio_task(p)) {
+		ems_high_prio_task(p) = 1;
+		ems_rq_nr_high_prio(rq) += 1;
+	}
+}
+
+void check_dequeue_task_attr(struct rq *rq, struct task_struct *p)
+{
+	if (get_sched_class(p) != EMS_SCHED_FAIR)
+		return;
+
+	if (ems_launch_task(p)) {
+		ems_launch_task(p) = 0;
+		ems_rq_nr_launch(rq) -= 1;
+	}
+
+	if (ems_reserved_task(p)) {
+		ems_reserved_task(p) = 0;
+		ems_rq_nr_reserved_task(rq) -= 1;
+	}
+
+	if (ems_high_prio_task(p)) {
+		ems_high_prio_task(p) = 0;
+		ems_rq_nr_high_prio(rq) -= 1;
+	}
+}
+
+void init_task_attr(struct task_struct *p)
+{
+	ems_boosted_by_user(p) = 0;
+	ems_launch_task(p) = 0;
+	ems_binder_task(p) = 0;
+	ems_low_latency_task(p) = 0;
+	ems_render_task(p) = 0;
+	ems_high_prio_task(p) = 0;
+}
+
+static int high_prio_emstune_notifier_call(struct notifier_block *nb,
+				unsigned long val, void *v)
+{
+	struct emstune_set *cur_set = (struct emstune_set *)v;
+	int i;
+
+	for (i = 0; i < CGROUP_COUNT; i++)
+		high_prio_threshold[i] = cur_set->high_prio.threshold[i];
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block high_prio_emstune_notifier = {
+	.notifier_call = high_prio_emstune_notifier_call,
+};
+
+void high_prio_init(void)
+{
+	emstune_register_notifier(&high_prio_emstune_notifier);
+}
 
 /******************************************************************************
  * panic handler for scheduler debugging                                      *
@@ -101,14 +281,14 @@ static struct notifier_block ems_panic_nb = {
 };
 
 struct pe_list *pe_list;
-static int num_of_list;
+static int num_of_pe_list;
 
 struct pe_list *get_pe_list(int index)
 {
 	if (unlikely(!pe_list))
 		return NULL;
 
-	if (index >= num_of_list)
+	if (index >= num_of_pe_list)
 		return NULL;
 
 	return &pe_list[index];
@@ -116,7 +296,33 @@ struct pe_list *get_pe_list(int index)
 
 int get_pe_list_size(void)
 {
-	return num_of_list;
+	return num_of_pe_list;
+}
+
+int get_pe_cluster_size(void)
+{
+	struct pe_list *pe_list = get_pe_list(0);
+
+	return pe_list->num_of_clusters;
+}
+
+struct cpumask *get_pe_cluster_mask(unsigned int cpu)
+{
+	struct pe_list *pe_list = get_pe_list(0);
+	int cluster;
+
+	if (cpu >= VENDOR_NR_CPUS)
+		return NULL;
+
+	if (!pe_list)
+		return NULL;
+
+	for (cluster = 0; cluster < pe_list->num_of_clusters; cluster++) {
+		if (cpumask_test_cpu(cpu, &pe_list->cpus[cluster]))
+			return &pe_list->cpus[cluster];
+	}
+
+	return NULL;
 }
 
 /******************************************************************************
@@ -154,151 +360,7 @@ ems_fops_poll(struct file *filp, struct poll_table_struct *wait)
 static long
 ems_fops_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	int ret = 0;
-	unsigned long size;
-
-	switch (cmd) {
-	case EMS_IOCTL_R_ECS_DOMAIN_COUNT:
-	{
-		int __user *user_count;
-		int ecs_domain_count;
-
-		size = sizeof(int);
-
-		user_count = (int __user *)arg;
-		if (!access_ok(user_count, size)) {
-			ret = -EFAULT;
-			break;
-		}
-
-		/* Get the number of domains in ECS. */
-		ecs_domain_count = ecs_ioctl_get_domain_count();
-
-		if (copy_to_user(user_count, &ecs_domain_count, size)) {
-			pr_warn("EMS: EMS_IOCTL_R_ECS_DOMAIN_COUNT doesn't work\n");
-			ret = -EFAULT;
-		}
-
-		break;
-	}
-	case EMS_IOCTL_R_ECS_DOMAIN_INFO:
-	{
-		struct ems_ioctl_ecs_domain_info __user *user_info;
-		struct ems_ioctl_ecs_domain_info *ecs_domain_info;
-
-		size = sizeof(struct ems_ioctl_ecs_domain_info);
-
-		user_info = (struct ems_ioctl_ecs_domain_info __user *)arg;
-		if (!access_ok(user_info, size)) {
-			ret = -EFAULT;
-			break;
-		}
-
-		ecs_domain_info = kzalloc(size, GFP_KERNEL);
-		if (!ecs_domain_info) {
-			pr_err("EMS: EMS_IOCTL_R_ECS_DOMAIN_INFO alloc failed\n");
-			ret = -ENOMEM;
-			break;
-		}
-
-		/*
-		 * Get domain info from ECS.
-		 *
-		 * NOTE: target domain should be delieved before this cmd.
-		 */
-		ecs_ioctl_get_ecs_domain_info(ecs_domain_info);
-
-		if (copy_to_user(user_info, ecs_domain_info, size)) {
-			pr_warn("EMS: EMS_IOCTL_R_ECS_DOMAIN_INFO doesn't work\n");
-			ret = -EFAULT;
-		}
-
-		kfree(ecs_domain_info);
-
-		break;
-	}
-	case EMS_IOCTL_W_ECS_TARGET_DOMAIN_ID:
-	{
-		unsigned int __user *user_target_domain_id;
-		unsigned int target_domain_id;
-
-		size = sizeof(unsigned int);
-
-		user_target_domain_id = (unsigned int __user *)arg;
-		if (!access_ok(user_target_domain_id, size)) {
-			ret = -EFAULT;
-			break;
-		}
-
-		if (copy_from_user(&target_domain_id, user_target_domain_id, size)) {
-			pr_warn("EMS: EMS_IOCTL_W_ECS_TARGET_DOMAIN_ID doesn't work\n");
-			ret = -EFAULT;
-			break;
-		}
-
-		/* Notify traget domain from user to ECS */
-		ecs_ioctl_set_target_domain(target_domain_id);
-
-		break;
-	}
-	case EMS_IOCTL_W_ECS_TARGET_STAGE_ID:
-	{
-		unsigned int __user *user_target_stage_id;
-		unsigned int target_stage_id;
-
-		size = sizeof(unsigned int);
-
-		user_target_stage_id = (unsigned int __user *)arg;
-		if (!access_ok(user_target_stage_id, size)) {
-			ret = -EFAULT;
-			break;
-		}
-
-		if (copy_from_user(&target_stage_id, user_target_stage_id, size)) {
-			pr_warn("EMS: EMS_IOCTL_W_ECS_TARGET_STAGE_ID doesn't work\n");
-			ret = -EFAULT;
-			break;
-		}
-
-		/* Notify traget stage from user to ECS */
-		ecs_ioctl_set_target_stage(target_stage_id);
-
-		break;
-	}
-	case EMS_IOCTL_W_ECS_STAGE_THRESHOLD:
-	{
-		unsigned int __user *user_threshold;
-		unsigned int threshold;
-
-		size = sizeof(unsigned int);
-
-		user_threshold = (unsigned int __user *)arg;
-		if (!access_ok(user_threshold, size)) {
-			ret = -EFAULT;
-			break;
-		}
-
-		if (copy_from_user(&threshold, user_threshold, size)) {
-			pr_warn("EMS: EMS_IOCTL_W_ECS_STAGE_THRESHOLD doesn't work\n");
-			ret = -EFAULT;
-			break;
-		}
-
-		/*
-		 * Notify threshold for a stage in a domain to ECS
-		 *
-		 * NOTE: target domain and stage should be delieved before this cmd.
-		 */
-		ecs_ioctl_set_stage_threshold(threshold);
-
-		break;
-	}
-	default:
-		ret = -EINVAL;
-		break;
-	}
-
-	return ret;
+	return 0;
 }
 
 static int ems_fops_release(struct inode *node, struct file *filp)
@@ -313,7 +375,6 @@ static int ems_register_misc_device(void)
 	struct miscdevice *miscdev = &bridge->miscdev;
 
 	fops->owner		= THIS_MODULE;
-	fops->llseek		= no_llseek;
 	fops->read		= ems_fops_read;
 	fops->poll		= ems_fops_poll;
 	fops->unlocked_ioctl	= ems_fops_ioctl;
@@ -350,63 +411,8 @@ static int ems_init_ioctl(void)
 }
 
 /******************************************************************************
- * cpufreq notifier                                                           *
- ******************************************************************************/
-static cpumask_var_t cpus_to_visit;
-static void parsing_done_workfn(struct work_struct *work);
-static DECLARE_WORK(parsing_done_work, parsing_done_workfn);
-
-static int ems_cpufreq_policy_notify_callback(struct notifier_block *nb,
-					unsigned long val, void *data)
-{
-	struct cpufreq_policy *policy = data;
-
-	if (val != CPUFREQ_CREATE_POLICY)
-		return 0;
-
-	cpumask_andnot(cpus_to_visit, cpus_to_visit, policy->related_cpus);
-
-	et_init_table(policy);
-	fv_init_table(policy);
-
-	if (cpumask_empty(cpus_to_visit)) {
-		emstune_ontime_init();
-
-		pr_debug("ems: energy: init energy table done\n");
-		schedule_work(&parsing_done_work);
-	}
-
-	return 0;
-}
-
-static struct notifier_block ems_cpufreq_policy_notifier = {
-	.notifier_call = ems_cpufreq_policy_notify_callback,
-	.priority = INT_MIN,
-};
-
-static void parsing_done_workfn(struct work_struct *work)
-{
-	cpufreq_unregister_notifier(&ems_cpufreq_policy_notifier,
-					 CPUFREQ_POLICY_NOTIFIER);
-	free_cpumask_var(cpus_to_visit);
-}
-
-static void ems_init_cpufreq_notifier(void)
-{
-	if (!alloc_cpumask_var(&cpus_to_visit, GFP_KERNEL))
-		return;
-
-	cpumask_copy(cpus_to_visit, cpu_possible_mask);
-
-	if (cpufreq_register_notifier(&ems_cpufreq_policy_notifier,
-					CPUFREQ_POLICY_NOTIFIER))
-		free_cpumask_var(cpus_to_visit);
-}
-
-/******************************************************************************
  * common function for ems                                                    *
  ******************************************************************************/
-static const struct sched_class *sched_class_begin;
 int get_sched_class(struct task_struct *p)
 {
 	if (is_idle_task(p))
@@ -421,6 +427,7 @@ int get_sched_class(struct task_struct *p)
 
 int cpuctl_task_group_idx(struct task_struct *p)
 {
+#ifndef CONFIG_SCHED_EMS_TASK_GROUP
 	int idx;
 	struct cgroup_subsys_state *css;
 
@@ -429,15 +436,58 @@ int cpuctl_task_group_idx(struct task_struct *p)
 	idx = css->id - 1;
 	rcu_read_unlock();
 
+	/* if customer add new group, use the last group */
 	if (idx >= CGROUP_COUNT)
 		idx = CGROUP_COUNT - 1;
 
 	return max(idx, 0);
+#else
+	int idx;
+	struct ems_task_struct *ep = (struct ems_task_struct *)android_task_vendor_data(p);
+
+	if (!ep) {
+		pr_warn("Failed to get ems_task_struct\n");
+		return 0;
+	}
+
+	idx = ep->cgroup;
+
+	if (idx >= CGROUP_COUNT)
+		idx = CGROUP_COUNT - 1;
+
+	return max(idx, 0);
+#endif
+}
+EXPORT_SYMBOL(cpuctl_task_group_idx);
+
+const struct cpumask *cpu_clustergroup_mask(int cpu)
+{
+	struct ems_cpu_topology *topo = percpu_topology(cpu);
+
+	return &topo->cluster_cpus;
 }
 
-const struct cpumask *cpu_coregroup_mask(int cpu)
+int cpu_clustergroup_id(int cpu)
 {
-	return &cpu_topology[cpu].core_sibling;
+	struct ems_cpu_topology *topo = percpu_topology(cpu);
+
+	return topo->cluster_id;
+}
+
+static DEFINE_PER_CPU(struct ems_sched_domain, sched_domains);
+
+const struct cpumask *cpu_sched_domain_mask(int cpu)
+{
+	struct ems_sched_domain *esd = &per_cpu(sched_domains, cpu);
+
+	return &esd->domain_cpus;
+}
+
+int cpu_sched_domain_id(int cpu)
+{
+	struct ems_sched_domain *esd = &per_cpu(sched_domains, cpu);
+
+	return esd->domain_id;
 }
 
 struct cpumask slowest_mask;
@@ -453,18 +503,20 @@ const struct cpumask *cpu_fastest_mask(void)
 	return &fastest_mask;
 }
 
-static void cpumask_speed_init(void)
+void cpumask_speed_init(void)
 {
 	int cpu;
 	unsigned long min_cap = ULONG_MAX, max_cap = 0;
+	struct cpumask temp_slowest_mask;
+	struct cpumask temp_fastest_mask;
 
-	cpumask_clear(&slowest_mask);
-	cpumask_clear(&fastest_mask);
+	cpumask_clear(&temp_slowest_mask);
+	cpumask_clear(&temp_fastest_mask);
 
 	for_each_cpu(cpu, cpu_possible_mask) {
 		unsigned long cap;
 
-		cap = capacity_cpu_orig(cpu);
+		cap = et_max_cap(cpu);
 		if (cap < min_cap)
 			min_cap = cap;
 		if (cap > max_cap)
@@ -474,28 +526,92 @@ static void cpumask_speed_init(void)
 	for_each_cpu(cpu, cpu_possible_mask) {
 		unsigned long cap;
 
-		cap = capacity_cpu_orig(cpu);
+		cap = et_max_cap(cpu);
 		if (cap == min_cap)
-			cpumask_set_cpu(cpu, &slowest_mask);
+			cpumask_set_cpu(cpu, &temp_slowest_mask);
+
 		if (cap == max_cap)
-			cpumask_set_cpu(cpu, &fastest_mask);
+			cpumask_set_cpu(cpu, &temp_fastest_mask);
 	}
+
+	cpumask_copy(&slowest_mask, &temp_slowest_mask);
+	cpumask_copy(&fastest_mask, &temp_fastest_mask);
 }
 
-static void qjump_rq_list_init(void)
+static void convert_to_logical_mask(struct cpumask *cpu_mask)
 {
+	struct cpumask logical_mask;
 	int cpu;
 
-	for_each_cpu(cpu, cpu_possible_mask) {
-		INIT_LIST_HEAD(ems_qjump_list(cpu_rq(cpu)));
-		ems_rq_nr_prio_tex(cpu_rq(cpu)) = 0;
+	cpumask_clear(&logical_mask);
+
+	for_each_cpu(cpu, cpu_mask) {
+		int log_cpu = get_cpu_log_id(cpu);
+		if (log_cpu >= 0)
+			cpumask_set_cpu(log_cpu, &logical_mask);
+	}
+
+	cpumask_copy(cpu_mask, &logical_mask);
+}
+
+static void adjust_pe_list(struct pe_list *raw_list, int num_of_raw_list)
+{
+	int raw_i, raw_j, pl_i, pl_j;
+	int num_of_clusters;
+
+	/*
+	 * 1) Convert the given cpu mask to logical mask
+	 */
+	for (raw_i = 0; raw_i < num_of_raw_list; raw_i++) {
+		struct pe_list *pl = &raw_list[raw_i];
+
+		for (raw_j = 0; raw_j < pl->num_of_clusters; raw_j++)
+			convert_to_logical_mask(&pl->cpus[raw_j]);
+
+		if (!cpumask_empty(&pl->cpus[0]))
+			num_of_pe_list++;
+	}
+	BUG_ON(!num_of_pe_list);
+
+	/*
+	 * 2) Build pe_list using logical mask
+	 */
+	pe_list = kmalloc_array(num_of_pe_list, sizeof(struct pe_list), GFP_KERNEL);
+	BUG_ON(!pe_list);
+
+	for (pl_i = 0, raw_i = 0; raw_i < num_of_raw_list; raw_i++) {
+		struct pe_list *dst = &pe_list[pl_i];
+		struct pe_list *src = &raw_list[raw_i];
+
+		/* Do not build pe_list that starts with unavailable cpus */
+		if (cpumask_empty(&src->cpus[0]))
+			continue;
+
+		num_of_clusters = 0;
+		for (pl_j = 0, raw_j = 0; raw_j < src->num_of_clusters; raw_j++)
+			if (!cpumask_empty(&src->cpus[raw_j]))
+				++num_of_clusters;
+
+		dst->num_of_clusters = num_of_clusters;
+		dst->cpus = kmalloc_array(num_of_clusters, sizeof(struct cpumask), GFP_KERNEL);
+		BUG_ON(!dst->cpus);
+
+		for (pl_j = 0, raw_j = 0; raw_j < src->num_of_clusters; raw_j++) {
+			if (cpumask_empty(&src->cpus[raw_j]))
+				continue;
+
+			cpumask_copy(&dst->cpus[pl_j++], &src->cpus[raw_j]);
+		}
+
+		pl_i++;
 	}
 }
 
 static void pe_list_init(void)
 {
+	struct pe_list *raw_list;
 	struct device_node *dn, *child;
-	int index = 0;
+	int index = 0, num_of_raw_list;
 
 	dn = of_find_node_by_path("/ems/pe-list");
 	if (!dn) {
@@ -503,26 +619,53 @@ static void pe_list_init(void)
 		return;
 	}
 
-	num_of_list = of_get_child_count(dn);
-	if (num_of_list == 0)
+	num_of_raw_list = of_get_child_count(dn);
+	if (num_of_raw_list == 0) {
+		pr_err("%s: pe-list is empty\n", __func__);
 		return;
+	}
 
-	pe_list = kmalloc_array(num_of_list, sizeof(struct pe_list), GFP_KERNEL);
+	raw_list = kmalloc_array(num_of_raw_list, sizeof(struct pe_list), GFP_KERNEL);
 
 	for_each_child_of_node(dn, child) {
-		struct pe_list *pl = &pe_list[index++];
+		struct pe_list *pl = &raw_list[index];
 		const char *buf[VENDOR_NR_CPUS];
 		int i;
 
-		pl->num_of_cpus = of_property_count_strings(child, "cpus");
-		if (pl->num_of_cpus == 0)
+		pl->num_of_clusters = of_property_count_strings(child, "cpus");
+		if (pl->num_of_clusters == 0)
 			continue;
 
-		pl->cpus = kmalloc_array(pl->num_of_cpus, sizeof(struct cpumask), GFP_KERNEL);
+		pl->cpus = kmalloc_array(pl->num_of_clusters, sizeof(struct cpumask), GFP_KERNEL);
 
-		of_property_read_string_array(child, "cpus", buf, pl->num_of_cpus);
-		for (i = 0; i < pl->num_of_cpus; i++)
-			cpulist_parse(buf[i], &pl->cpus[i]);
+		of_property_read_string_array(child, "cpus", buf, pl->num_of_clusters);
+		for (i = 0; i < pl->num_of_clusters; i++)
+			ems_cpulist_parse(buf[i], &pl->cpus[i]);
+
+		index++;
+	}
+
+	adjust_pe_list(raw_list, num_of_raw_list);
+
+	for (index = 0; index < num_of_raw_list; index++)
+		kfree(raw_list[index].cpus);
+	kfree(raw_list);
+}
+
+static void sched_domain_init(void)
+{
+	int cluster, cpu;
+	struct pe_list *pl = &pe_list[0];
+
+	for (cluster = 0; cluster < pl->num_of_clusters; cluster++) {
+		struct cpumask *cluster_mask = &pl->cpus[cluster];
+
+		for_each_cpu(cpu, cluster_mask) {
+			struct ems_sched_domain *esd = &per_cpu(sched_domains, cpu);
+
+			cpumask_copy(&esd->domain_cpus, cluster_mask);
+			esd->domain_id = cluster;
+		}
 	}
 }
 
@@ -568,7 +711,11 @@ int detach_one_task(struct rq *src_rq, struct rq *dst_rq,
 void attach_task(struct rq *dst_rq, struct task_struct *p)
 {
 	activate_task(dst_rq, p, ENQUEUE_NOCLOCK);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,0)
+	wakeup_preempt(dst_rq, p, 0);
+#else
 	check_preempt_curr(dst_rq, p, 0);
+#endif
 }
 
 void attach_one_task(struct rq *dst_rq, struct task_struct *p)
@@ -582,266 +729,68 @@ void attach_one_task(struct rq *dst_rq, struct task_struct *p)
 }
 
 /******************************************************************************
- * main function for ems                                                      *
+ * cpufreq notifier                                                           *
  ******************************************************************************/
-int ems_select_task_rq_rt(struct task_struct *p, int prev_cpu,
-			 int sd_flag, int wake_flag)
+static cpumask_var_t cpus_to_visit;
+static void parsing_done_workfn(struct work_struct *work);
+static DECLARE_WORK(parsing_done_work, parsing_done_workfn);
+
+static int ems_cpufreq_policy_notify_callback(struct notifier_block *nb,
+					unsigned long val, void *data)
 {
-	if (!(sd_flag & SD_BALANCE_FORK))
-		mlt_update_task(p, MLT_STATE_NOCHANGE, sched_clock());
+	struct cpufreq_policy *policy = data;
 
-	return frt_select_task_rq_rt(p, prev_cpu, sd_flag, wake_flag);
-}
+	if (val != CPUFREQ_CREATE_POLICY)
+		return 0;
 
-int ems_select_task_rq_fair(struct task_struct *p, int prev_cpu,
-			   int sd_flag, int wake_flag)
-{
-	if (!(sd_flag & SD_BALANCE_FORK))
-		mlt_update_task(p, MLT_STATE_NOCHANGE, sched_clock());
+	cpumask_andnot(cpus_to_visit, cpus_to_visit, policy->related_cpus);
 
-	/* skip calling dynamic_fast_release_cpus from Ontime */
-	if (wake_flag)
-		ecs_enqueue_update(prev_cpu, p);
+	et_init_table(policy);
+	fv_init_table(policy);
 
-	return __ems_select_task_rq_fair(p, prev_cpu, sd_flag, wake_flag);
-}
+	if (cpumask_empty(cpus_to_visit)) {
+		ems_game_late_init(ems_kobj);
 
-int ems_select_fallback_rq(struct task_struct *p, int target_cpu)
-{
-	if (target_cpu >= 0 && cpu_active(target_cpu))
-		return target_cpu;
+		pr_debug("ems: energy: init energy table done\n");
+		schedule_work(&parsing_done_work);
+	}
 
-	return -1;
-}
-
-void ems_idle_exit(int cpu, int state)
-{
-	mlt_idle_exit(cpu);
-}
-
-void ems_idle_enter(int cpu, int *state)
-{
-	mlt_idle_enter(cpu, *state);
-}
-
-void ems_tick_entry(struct rq *rq)
-{
-	mlt_tick(rq);
-}
-
-void ems_tick(struct rq *rq)
-{
-	mhdvfs();
-
-	halo_tick(rq);
-
-	profile_sched_data();
-
-	frt_update_available_cpus(rq);
-
-	gsc_update_tick();
-
-	ecs_update();
-
-	monitor_sysbusy();
-
-	somac_tasks();
-
-	tex_update(rq);
-
-	lb_tick(rq);
-
-	ontime_migration();
-}
-
-void ems_enqueue_task(struct rq *rq, struct task_struct *p, int flags)
-{
-	mlt_enqueue_task(rq);
-
-	profile_enqueue_task(rq, p);
-
-	tex_enqueue_task(p, cpu_of(rq));
-
-	freqboost_enqueue_task(p, cpu_of(rq), flags);
-
-	if (ems_task_misfited(p))
-		lb_enqueue_misfit_task(p, rq);
-}
-
-void ems_dequeue_task(struct rq *rq, struct task_struct *p, int flags)
-{
-	mlt_dequeue_task(rq);
-
-	tex_dequeue_task(p, cpu_of(rq));
-
-	freqboost_dequeue_task(p, cpu_of(rq), flags);
-
-	if (ems_task_misfited(p))
-		lb_dequeue_misfit_task(p, rq);
-}
-
-void ems_replace_next_task_fair(struct rq *rq, struct task_struct **p_ptr,
-				struct sched_entity **se_ptr, bool *repick,
-				bool simple, struct task_struct *prev)
-{
-	tex_replace_next_task_fair(rq, p_ptr, se_ptr, repick, simple, prev);
-}
-
-void ems_check_preempt_wakeup(struct rq *rq, struct task_struct *p,
-		bool *preempt, bool *ignore)
-{
-	tex_check_preempt_wakeup(rq, p, preempt, ignore);
-}
-
-void ems_do_sched_yield(struct rq *rq)
-{
-	struct task_struct *curr = rq->curr;
-
-	lockdep_assert_held(&rq->__lock);
-
-	tex_do_yield(curr);
-}
-
-/* can_attach has non-zero value, it is not allowed to attach */
-void ems_cpu_cgroup_can_attach(struct cgroup_taskset *tset, int can_attach)
-{
-	if (!can_attach)
-		freqboost_can_attach(tset);
-}
-
-/* If EMS allows load balancing, return 0 */
-int ems_load_balance(struct rq *rq)
-{
-	if (sysbusy_on_somac())
-		return -EBUSY;
-
-	if (!ecs_cpu_available(rq->cpu, NULL))
-		return -EBUSY;
-
+	cpumask_speed_init();
+	set_capacity_fixup_mask();
+	set_maxfreq_fixup_value(policy);
 	return 0;
 }
 
-void ems_update_misfit_status(struct task_struct *p,
-			struct rq *rq, bool *need_update)
+static struct notifier_block ems_cpufreq_policy_notifier = {
+	.notifier_call = ems_cpufreq_policy_notify_callback,
+	.priority = INT_MIN,
+};
+
+static void parsing_done_workfn(struct work_struct *work)
 {
-	lb_update_misfit_status(p, rq, need_update);
+	cpufreq_unregister_notifier(&ems_cpufreq_policy_notifier,
+					 CPUFREQ_POLICY_NOTIFIER);
+	free_cpumask_var(cpus_to_visit);
+
+	ems_rq_cpu_capacity_init();
 }
 
-void ems_nohz_balancer_kick(struct rq *rq, unsigned int *flag, int *done)
+static void ems_init_cpufreq_notifier(void)
 {
-	lb_nohz_balancer_kick(rq, flag, done);
-}
-
-void ems_can_migrate_task(struct task_struct *p, int dst_cpu, int *can_migrate)
-{
-	lb_can_migrate_task(p, dst_cpu, can_migrate);
-}
-
-void ems_find_busiest_queue(int dst_cpu, struct sched_group *group,
-		struct cpumask *env_cpus, struct rq **busiest, int *done)
-{
-	lb_find_busiest_queue(dst_cpu, group, env_cpus, busiest, done);
-}
-
-extern void ems_newidle_balance(struct rq *this_rq, struct rq_flags *rf,
-					int *pulled_task, int *done)
-{
-	lb_newidle_balance(this_rq, rf, pulled_task, done);
-}
-
-void ems_post_init_entity_util_avg(struct sched_entity *se)
-{
-	ntu_apply(se);
-}
-
-void ems_sched_fork_init(struct task_struct *p)
-{
-	tex_task_init(p);
-	mlt_task_init(p);
-	ems_task_misfited(p) = 0;
-}
-
-void ems_schedule(struct task_struct *prev,
-		struct task_struct *next, struct rq *rq)
-{
-	if (prev == next)
+	if (!alloc_cpumask_var(&cpus_to_visit, GFP_KERNEL))
 		return;
 
-	slack_timer_cpufreq(rq->cpu,
-		get_sched_class(next) == EMS_SCHED_IDLE,
-		get_sched_class(prev) == EMS_SCHED_IDLE);
+	cpumask_copy(cpus_to_visit, cpu_possible_mask);
 
-	mlt_task_switch(rq->cpu, prev, next);
+	if (cpufreq_register_notifier(&ems_cpufreq_policy_notifier,
+					CPUFREQ_POLICY_NOTIFIER))
+		free_cpumask_var(cpus_to_visit);
 }
 
-void ems_set_task_cpu(struct task_struct *p, unsigned int new_cpu)
-{
-	mlt_task_migration(p, new_cpu);
-}
 
-void ems_set_binder_task(struct task_struct *p, bool sync,
-		struct binder_proc *proc)
-{
-	if (!p)
-		return;
-
-	if ((is_top_app_task(current) && is_rt_task(p->group_leader)) ||
-			(is_top_app_task(p) && is_rt_task(current->group_leader)))
-		ems_binder_task(p) = 1;
-
-	if (p && current->signal &&
-			is_important_task(current))
-		ems_binder_task(p) = 1;
-}
-
-void ems_clear_binder_task(struct task_struct *p)
-{
-	ems_binder_task(p) = 0;
-}
-
-void ems_set_binder_priority(struct binder_transaction *t, struct task_struct *p)
-{
-	if (t && t->need_reply && ems_boosted_tex(current))
-		ems_boosted_tex(p) = 1;
-}
-
-void ems_restore_binder_priority(struct binder_transaction *t, struct task_struct *p)
-{
-	if (t && ems_boosted_tex(p))
-		ems_boosted_tex(p) = 0;
-}
-
-/*
- * idle load balancing details
- * - When one of the busy CPUs notice that there may be an idle rebalancing
- *   needed, they will kick the idle load balancer, which then does idle
- *   load balancing for all the idle CPUs.
- * - HK_FLAG_MISC CPUs are used for this task, because HK_FLAG_SCHED not set
- *   anywhere yet.
- * - Consider ECS cpus. If ECS seperate a cpu from scheduling, skip it.
- */
-int ems_find_new_ilb(struct cpumask *nohz_idle_cpus_mask)
-{
-	int cpu;
-
-	for_each_cpu_and(cpu, nohz_idle_cpus_mask, housekeeping_cpumask(1 << HK_TYPE_MISC)) {
-		/* ECS doesn't allow the cpu to do idle load balance */
-		if (!ecs_cpu_available(cpu, NULL))
-			continue;
-
-		if (available_idle_cpu(cpu))
-			return cpu;
-	}
-
-	return nr_cpu_ids;
-}
-
-void ems_arch_set_freq_scale(const struct cpumask *cpus, unsigned long freq,
-				unsigned long max, unsigned long *scale)
-{
-	et_arch_set_freq_scale(cpus, freq, max, scale);
-}
-
+/******************************************************************************
+*				SYSFS						*
+ ******************************************************************************/
 static ssize_t show_sched_topology(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -872,6 +821,17 @@ static ssize_t show_sched_topology(struct device *dev,
 		ret += snprintf(buf + ret,
 				50, "----------------------------------------\n");
 	}
+	ret += snprintf(buf + ret, 70, "slowest_cpus=%#x\n",
+			*(unsigned int *)cpumask_bits(cpu_slowest_mask()));
+	ret += snprintf(buf + ret, 70, "fastest_cpus=%#x\n",
+			*(unsigned int *)cpumask_bits(cpu_fastest_mask()));
+
+	for_each_possible_cpu(cpu) {
+		ret += snprintf(buf + ret, 70, "cpu%d cap_origin=%5lu cap=%5lu freq_cap=%5lu\n",
+					cpu, ems_get_origin_cpu_capacity(cpu),
+					ems_get_actual_cpu_capacity(cpu),
+					arch_scale_freq_capacity(cpu));
+	}
 	rcu_read_unlock();
 
 	return ret;
@@ -885,64 +845,164 @@ static ssize_t show_pe_list(struct device *dev,
 	int index, i;
 	int ret = 0;
 
-	for (index = 0; index < num_of_list; index++) {
+	for (index = 0; index < num_of_pe_list; index++) {
 		struct pe_list *pl = &pe_list[index];
 
 		ret += snprintf(buf + ret, PAGE_SIZE - ret, "pe_list[%d]: ", index);
-		for (i = 0; i < pl->num_of_cpus; i++)
+		for (i = 0; i < pl->num_of_clusters; i++)
 			ret += snprintf(buf + ret, PAGE_SIZE - ret, "<%*pbl> ",
 					cpumask_pr_args(&pl->cpus[i]));
 		ret += snprintf(buf + ret, PAGE_SIZE - ret, "\n");
 	}
 
+	ret += snprintf(buf + ret, PAGE_SIZE - ret, "pe_list_size : %d\n", num_of_pe_list);
+	ret += snprintf(buf + ret, PAGE_SIZE - ret, "pe_cluster_size : %d\n", get_pe_cluster_size());
+
 	return ret;
 }
 
 static DEVICE_ATTR(pe_list, S_IRUGO, show_pe_list, NULL);
-DEFINE_PER_CPU(struct ems_rq_vendor_data, ems_runqueues);
 
-int busy_cpu_ratio = 150;
+DEFINE_PER_CPU(struct _rq_avd1, ems_runqueues);
+DEFINE_PER_CPU(struct ems_cpu_topology, topo_info);
 
-static int ems_probe(struct platform_device *pdev)
+static void ems_cpu_topology_init(void)
 {
+	struct device_node *np, *child;
+	struct cpumask cpus;
+	const char *buf;
+	int cpu, nr_cluster = 0, ret = 0;
+
+	np = of_find_node_by_path("/power-data/cpu");
+	if (!np)
+		return;
+
+	for_each_child_of_node(np, child) {
+		ret = of_property_read_string(child, "cpus", &buf);
+		if (ret)
+			return;
+		cpulist_parse(buf, &cpus);
+
+		for_each_cpu(cpu, &cpus) {
+			struct ems_cpu_topology *topo = percpu_topology(cpu);
+
+			cpumask_copy(&topo->cluster_cpus, &cpus);
+			topo->cluster_id = nr_cluster;
+		}
+
+		nr_cluster++;
+	}
+}
+
+void ems_task_init(struct task_struct *p)
+{
+	struct ems_task_struct *ets;
+
+	ets = (struct ems_task_struct *)android_task_vendor_data(p);
+
+	memset(ets, 0, sizeof(struct ems_task_struct));
+}
+
+static int ems_suspend(struct device *dev)
+{
+	sysbusy_suspend();
+	pago_suspend();
+	pr_info("EMS suspend\n");
+
+	return 0;
+}
+
+static int ems_resume(struct device *dev)
+{
+	pago_resume();
+
+	return 0;
+}
+
+static void ems_idle_task_init(void)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		struct task_struct *idle_task = cpu_rq(cpu)->idle;
+		ems_game_task_init(idle_task);
+		egg_assign_reserved_cpu(idle_task);
+	}
+}
+
+static int ems_init_stop_handler(void *data)
+{
+	int cpu;
+	struct task_struct *g, *p;
+
+	read_lock(&tasklist_lock);
+	for_each_possible_cpu(cpu)
+		raw_spin_lock(&cpu_rq(cpu)->__lock);
+
+	for_each_process_thread(g, p) {
+		get_task_struct(p);
+		ems_game_task_init(p);
+		init_task_attr(p);
+		mlt_init_task(p);
+		dslt_init_task(p);
+		gsc_init_new_task(p);
+		tex_task_init(p);
+		egg_assign_reserved_cpu(p);
+		put_task_struct(p);
+	}
+
+	ems_hook_enable(true);
+
+	for_each_possible_cpu(cpu) {
+		raw_spin_unlock(&cpu_rq(cpu)->__lock);
+	}
+	read_unlock(&tasklist_lock);
+
+	return 0;
+}
+
+static void ems_init_finisher(void)
+{
+	stop_machine(ems_init_stop_handler, NULL, NULL);
+}
+
+static struct platform_device *ems_pdev;
+static void ems_probe(struct work_struct *work)
+{
+	struct platform_device *pdev = ems_pdev;
 	int ret;
 
-	/* get first sched_class pointer */
-	sched_class_begin = cpu_rq(0)->stop->sched_class;
-
-	cpumask_speed_init();
-	qjump_rq_list_init();
-	pe_list_init();
-
-	ems_kobj = &pdev->dev.kobj;
-
-	core_init(pdev->dev.of_node);
-	et_init(ems_kobj);
-	mlt_init(ems_kobj, pdev->dev.of_node);
-	ntu_init(ems_kobj);
-	profile_sched_init(ems_kobj);
-	ontime_init(ems_kobj);
-	cpufreq_init();
-	ego_pre_init(ems_kobj);
-	freqboost_init();
-	frt_init(ems_kobj);
-	ecs_init(ems_kobj);
-	ecs_gov_stage_init(ems_kobj);
-	ecs_gov_dynamic_init(ems_kobj);
-	sysbusy_init(ems_kobj);
-	gsc_init(ems_kobj);
-	emstune_init(ems_kobj, pdev->dev.of_node, &pdev->dev);
-	fv_init(ems_kobj);
-	halo_governor_init(ems_kobj);
-	lb_init();
-	mhdvfs_init(ems_kobj);
+	ems_cpu_topology_init();
 
 	ret = hook_init();
 	if (ret) {
 		WARN_ON("EMS failed to register vendor hook\n");
-		return ret;
+		return;
 	}
+	ems_kobj = &pdev->dev.kobj;
 
+	ems_idle_task_init();
+
+	cpumask_copy(&slowest_mask, cpu_possible_mask);
+	cpumask_copy(&fastest_mask, cpu_possible_mask);
+
+	/* compile time data size check */
+	//EMS_VENDOR_DATA_SIZE_CHECK(struct ems_task_struct, struct task_struct);
+
+	pe_list_init();
+	sched_domain_init();
+	mlt_init(ems_kobj, pdev->dev.of_node);
+	dslt_init(ems_kobj, pdev->dev.of_node);
+	profile_sched_init(ems_kobj);
+
+	ems_idle_select_init(pdev);
+	ems_freq_select_init(pdev);
+	ems_core_select_init(pdev);
+	ems_game_sched_init(pdev);
+
+#ifdef CONFIG_SCHED_EMS_DSU_SLICE_DOWN
+	dsu_slice_down_init();
+#endif
 	ems_init_ioctl();
 
 	if (sysfs_create_file(ems_kobj, &dev_attr_sched_topology.attr))
@@ -954,11 +1014,31 @@ static int ems_probe(struct platform_device *pdev)
 	if (sysfs_create_link(kernel_kobj, ems_kobj, "ems"))
 		pr_warn("failed to link ems\n");
 
-	pr_info("EMS initialized\n");
+#ifdef CONFIG_SCHED_EMS_TASK_GROUP
+	if (task_group_init(ems_kobj))
+		pr_warn("failed to taskgroup_init\n");
+#endif
 
 	atomic_notifier_chain_register(&panic_notifier_list, &ems_panic_nb);
 
 	ems_init_cpufreq_notifier();
+
+	/* it must be called at last step of init sequence*/
+	ems_init_finisher();
+
+	init_done = true;
+	pr_info("EMS initialized\n");
+}
+
+static DECLARE_WORK(ems_init_work, ems_probe);
+static int ems_module_init(struct platform_device *pdev)
+{
+	ems_pdev = pdev;
+
+	ecs_init(&pdev->dev.kobj);
+	exynos_perf_events_init(&pdev->dev.kobj);
+
+	schedule_work(&ems_init_work);
 
 	return 0;
 }
@@ -969,16 +1049,23 @@ static const struct of_device_id of_ems_match[] = {
 };
 MODULE_DEVICE_TABLE(of, of_ems_match);
 
+static const struct dev_pm_ops ems_pm_ops = {
+	.suspend = ems_suspend,
+	.resume = ems_resume,
+};
+
 static struct platform_driver ems_driver = {
 	.driver = {
 		.name = "ems",
 		.owner = THIS_MODULE,
+		.pm = &ems_pm_ops,
 		.of_match_table = of_ems_match,
 	},
-	.probe          = ems_probe,
+	.probe          = ems_module_init,
 };
 
 module_platform_driver(ems_driver);
 
+MODULE_SOFTDEP("pre: exynos-cpu-phyid");
 MODULE_DESCRIPTION("EMS");
 MODULE_LICENSE("GPL");

@@ -12,9 +12,8 @@
 #include <linux/sched/clock.h>
 #include <linux/tick.h>
 #include <linux/hrtimer.h>
-#include <linux/ems.h>
 
-#include "ems.h"
+#include <soc/samsung/ems.h>
 
 #include <dt-bindings/soc/samsung/ems.h>
 #include <trace/events/ems_debug.h>
@@ -23,7 +22,8 @@
 /* previous wake-up reason */
 enum waker {
 	WAKEUP_BY_IPI,
-	WAKEUP_BY_DET,			/* determined event like periodic IRQ, timer, tick */
+	WAKEUP_BY_DET,			/* determined event like periodic IRQ, timer */
+	WAKEUP_BY_TICK,			/* tick */
 	WAKEUP_BY_HALO_TIMER_1ST,	/* expired time from 1st try */
 	WAKEUP_BY_HALO_TIMER_2ND,	/* expired time from 2nd try */
 	WAKEUP_BY_SKIP_REFLECT,
@@ -34,8 +34,12 @@ enum waker {
 enum selector {
 	BY_IPI,		/* matches with IPI */
 	BY_DET,
+	BY_TICK,
+	BY_LONG_TICK,
 	BY_CONSTRAINT,
+	BY_FORCE,
 	BY_ECS,
+	BY_DCT,
 	BY_SKIP_REFLECT,
 };
 
@@ -46,117 +50,34 @@ enum timer_type {
 	TIMER_NUM,
 };
 
-/* time and slen table */
-#define HIST_NUM	7
-struct time_table {
-	s64 time;
-	s64 slen;
-};
-struct time_hist {
-	s32 cur_idx;
-	struct time_table tbl[HIST_NUM];
-};
-
-/* hit/miss history */
-#define PULSE		1024
-#define DECAY_SHIFT	2
-#define IGNORE_NUM	(1 << 7)
-struct hit_state {
-	u64 hit;	/* hit ratio */
-	u64 miss;	/* miss ratio */
-};
-
-/* c-state data */
-struct cstate_data {
-	u64 entry_latency_ns;
-	u64 exit_latency_ns;
-	u64 target_residency_ns;
-};
-
-/* IPI's history */
-struct halo_ipi {
-	s64 ipi_slen_ns;	/* predicted sleep length to next ipi */
-	struct time_hist time_hist;
-};
-
-/* Tick info */
-struct halo_tick {
-	int triggered;		/* tick stopped */
-	s64 last_tick_ns;	/* last tick time */
-	s64 tick_slen_ns;	/* sleep length to next tick */
-};
-
-/* halo htimer */
-struct halo_timer {
-	struct hrtimer timer;
-	u32 triggered;		/* timer expired status */
-	int type;		/* timer type */
-	struct hit_state hstate;
-};
-
-/* halo sched-info */
-struct halo_sched {
-	u32 avg_nr_run;		/* number of running cpus */
-	s32 heaviness;		/* system heaviness value from sched info */
-};
-
-/* periodic irq requester */
-#define IRQ_NAME_LEN	20
-struct halo_irq {
-	struct list_head list;
-	int num;		/* irq num */
-	char name[IRQ_NAME_LEN];/* irq name */
-	struct cpumask cpus;	/* irq affinity mask */
-	u64 cnt;		/* irq accumulate count */
-	ktime_t last_update_ns;	/* last irq triggered time */
-	ktime_t period_ns;	/* irq period */
-
-	void (*fn)(u64 *cnt, ktime_t *time);	/* irq validation check function */
-
-	int enabled;		/* irq validate status */
-	bool validated;		/* irq period is valid */
-};
-
-/* periodic irq list */
-struct halo_irqs {
-	struct list_head list;
-	raw_spinlock_t	lock;
-	s64 irq_slen_ns;
-};
-
-/* halo tuanble and sysfs */
-#define	RATIO_UNIT		100
-struct halo_tune {
-	struct cpumask cpus;
-	int expired_ratio;		/* def-timer expired time ratio */
-	struct kobject		kobj;
-};
-
-/*
- * struct halo_cpu - CPU data used by the HAO Governor
- */
-struct halo_cpu {
-	u32 last_idx;			/* last selected c-state */
-	enum waker last_waker;		/* last wakeup source */
-	s64 last_slen_ns;		/* last sleep length */
-	s64 timer_slen_ns;		/* sleep length to next timer event without tick */
-	s64 req_latency_ns;		/* requested latency */
-	s64 det_slen_ns;		/* determined sleep length to next event like(timer, tick, periodic irqs) */
-
-	struct halo_ipi hipi;		/* ipi history */
-	struct halo_tick htick;		/* tick information */
-	struct halo_sched hsched;	/* sched information */
-	struct halo_irqs hirqs;		/* periodic irqs list */
-	struct halo_timer htimer;	/* timer struct to correct c-state */
-	struct halo_tune *htune;	/* for tunable */
-
-	struct cstate_data csd[CPUIDLE_STATE_MAX];	/* dynamic cstate data */
-
-	struct cpuidle_device *dev;
+enum halo_cstate {
+	HALO_C1,
+	HALO_C2,
+	HALO_STATE_NUM,
 };
 
 struct kobject *halo_kobj;
 static DEFINE_PER_CPU(struct halo_cpu, halo_cpus);
+
+struct cpumask halo_busy_cpus;
+void halo_update_busy_cpus(const struct cpumask *mask)
+{
+	if (likely(mask))
+		cpumask_copy(&halo_busy_cpus, mask);
+	else
+		cpumask_clear(&halo_busy_cpus);
+}
+EXPORT_SYMBOL_GPL(halo_update_busy_cpus);
+
+/********************************************************************************
+ *				HALO EXTERNAL API				*
+ *******************************************************************************/
+struct cpumask idle_allowed_mask;
+void update_idle_allowed_mask(const struct cpumask *mask)
+{
+	cpumask_copy(&idle_allowed_mask, mask);
+}
+EXPORT_SYMBOL_GPL(update_idle_allowed_mask);
 
 /********************************************************************************
  *				HALO HELPER FUNC				*
@@ -330,7 +251,7 @@ static s64 halo_need_timer(struct cpuidle_driver *drv, struct cpuidle_device *de
 	expired_time = 4 * NSEC_PER_MSEC;
 
 	delta_time = ktime_sub(det_slen_ns, expired_time);
-	if (delta_time <= 0 )
+	if (delta_time <= 0)
 		return 0;
 
 	/*
@@ -389,21 +310,21 @@ static void halo_timer_update_hstate(int cpu, struct halo_timer *htimer)
  * halo_update_sched_info - update sched information for more accurate prediction
  * When system more heavy than before, increase heaviness value
  */
-#define VALID_NR_RUN_DIFF	(NR_RUN_UNIT >> 2)
+#define VALID_RUNNABLE_DIFF	(MLT_RUNNABLE_UNIT >> 2)
 static void halo_update_sched_info(struct cpuidle_device *dev, struct halo_cpu *hcpu)
 {
 	struct halo_sched *hsched = &hcpu->hsched;
-	s32 avg_nr_run = mlt_avg_nr_run(cpu_rq(dev->cpu));
+	s32 avg_nr_run = mlt_runnable(dev->cpu);
 	s32 avg_nr_run_diff = avg_nr_run - hsched->avg_nr_run;
 
 	hsched->avg_nr_run = avg_nr_run;
 
-	if (abs(avg_nr_run_diff) < VALID_NR_RUN_DIFF) {
+	if (abs(avg_nr_run_diff) < VALID_RUNNABLE_DIFF) {
 		hcpu->hsched.heaviness = 0;
 		return;
 	}
 
-	hcpu->hsched.heaviness = min(avg_nr_run_diff, NR_RUN_UNIT);
+	hcpu->hsched.heaviness = min(avg_nr_run_diff, MLT_RUNNABLE_UNIT);
 }
 
 /********************************************************************************
@@ -442,9 +363,9 @@ static void halo_update_ipi_history(int cpu, struct cpuidle_driver *drv,
 	 * on the other way it increase as the sched-load decreases.
 	 */
 	if (hcpu->hsched.heaviness > 0)
-		correction_ns = (min_ns - avg_ns) * hcpu->hsched.heaviness / NR_RUN_UNIT;
+		correction_ns = (min_ns - avg_ns) * hcpu->hsched.heaviness / MLT_RUNNABLE_UNIT;
 	else
-		correction_ns = (avg_ns - max_ns) * hcpu->hsched.heaviness / NR_RUN_UNIT;
+		correction_ns = (avg_ns - max_ns) * hcpu->hsched.heaviness / MLT_RUNNABLE_UNIT;
 
 	hipi->ipi_slen_ns = max((s64)0, (avg_ns + correction_ns));
 
@@ -477,7 +398,7 @@ void halo_tick(struct rq *rq)
 		htick->triggered = true;
 		htick->last_tick_ns = local_clock();
 	}
-	trace_halo_tick(cpu_of(rq), htick->triggered);
+	trace_halo_tick(cpu_of(rq), htick->triggered, htick->last_tick_ns);
 }
 
 /**
@@ -502,13 +423,13 @@ static void halo_update_tick(struct halo_cpu *hcpu, s64 now)
 #define ERROR_RATIO	10	/* 10% */
 static bool check_irq_validation(struct halo_cpu *hcpu, struct halo_irq *hirq)
 {
-	u64 delta_cnt, prev_cnt = hirq->cnt;
+	u64 delta_cnt, prev_cnt;
 	ktime_t delta_ns, prev_ns = hirq->last_update_ns;
 	ktime_t error_range_ns, error_ns;
 	ktime_t real_period_ns;
-	unsigned long flags;
 
-	raw_spin_lock_irqsave(&hcpu->hirqs.lock, flags);
+	/* store previous cnt */
+	prev_cnt = hirq->cnt;
 
 	/* get recent cnt, last_update_ns */
 	hirq->fn(&hirq->cnt, &hirq->last_update_ns);
@@ -522,12 +443,11 @@ static bool check_irq_validation(struct halo_cpu *hcpu, struct halo_irq *hirq)
 	error_ns = abs(real_period_ns - hirq->period_ns);
 	if (error_ns > error_range_ns) {
 		hirq->validated = false;
-		raw_spin_unlock_irqrestore(&hcpu->hirqs.lock, flags);
 		return false;
 	}
 
 	hirq->validated = true;
-	raw_spin_unlock_irqrestore(&hcpu->hirqs.lock, flags);
+
 	return true;
 }
 
@@ -535,6 +455,9 @@ static void halo_update_irq_slen(struct halo_cpu *hcpu, s64 now)
 {
 	struct halo_irq *hirq;
 	s64 min_slen = LLONG_MAX;
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&hcpu->hirqs.lock, flags);
 
 	list_for_each_entry(hirq, &hcpu->hirqs.list, list) {
 		s64 slen;
@@ -552,7 +475,10 @@ static void halo_update_irq_slen(struct halo_cpu *hcpu, s64 now)
 		if (slen < min_slen)
 			min_slen = slen;
 	}
-	hcpu->hirqs.irq_slen_ns = min_slen;;
+
+	hcpu->hirqs.irq_slen_ns = min_slen;
+
+	raw_spin_unlock_irqrestore(&hcpu->hirqs.lock, flags);
 }
 
 /*
@@ -608,7 +534,7 @@ void halo_register_periodic_irq(int irq_num, const char *name,
 		/* allocate irq information */
 		hirq = kzalloc(sizeof(struct halo_irq), GFP_KERNEL);
 		if (!hirq) {
-			pr_err("%s: failed to allocate cpu%d irq(%d)\n",__func__, cpu, irq_num);
+			pr_err("%s: failed to allocate cpu%d irq(%d)\n", __func__, cpu, irq_num);
 			raw_spin_unlock_irqrestore(&hcpu->hirqs.lock, flags);
 			continue;
 		}
@@ -707,6 +633,8 @@ static void halo_get_cstate_data(struct cpuidle_driver *drv,
 
 		val = fv_get_residency(dev->cpu, i);
 		hcpu->csd[i].target_residency_ns = val ? val : s->target_residency_ns;
+		if (cpumask_test_cpu(dev->cpu, &halo_busy_cpus))
+			hcpu->csd[i].target_residency_ns = hcpu->csd[i].target_residency_ns * 3;
 
 		val = fv_get_exit_latency(dev->cpu, i);
 		hcpu->csd[i].exit_latency_ns = val ? val : s->exit_latency_ns;
@@ -722,12 +650,18 @@ static void halo_update(struct cpuidle_driver *drv, struct cpuidle_device *dev, 
 {
 	struct halo_cpu *hcpu = get_hcpu(dev->cpu);
 	s64 tick_slen_ns;
+	ktime_t delta;
 
 	/* get latency */
 	hcpu->req_latency_ns = cpuidle_governor_latency_req(dev->cpu);
 
 	/* sleep length to next timer event */
-	hcpu->timer_slen_ns = tick_nohz_get_sleep_length(&tick_slen_ns);
+	delta = tick_nohz_get_sleep_length(&tick_slen_ns);
+	if (unlikely(delta < 0)) {
+		delta = 0;
+		tick_slen_ns = 0;
+	}
+	hcpu->timer_slen_ns = delta;
 
 	/* Update Sched-Tick information */
 	halo_update_tick(hcpu, now);
@@ -775,6 +709,7 @@ static inline s64 halo_compute_pred_slen(struct halo_cpu *hcpu, struct cpuidle_d
 {
 	if (hcpu->last_waker == WAKEUP_BY_IPI ||
 		hcpu->last_waker == WAKEUP_BY_DET ||
+		hcpu->last_waker == WAKEUP_BY_TICK ||
 		hcpu->last_waker == WAKEUP_BY_SKIP_REFLECT)
 		return hcpu->hipi.ipi_slen_ns;
 	else if (hcpu->last_waker == WAKEUP_BY_HALO_TIMER_1ST) {
@@ -785,7 +720,7 @@ static inline s64 halo_compute_pred_slen(struct halo_cpu *hcpu, struct cpuidle_d
 		struct hit_state *hstate = &hcpu->htimer.hstate;
 		struct halo_sched *hsched = &hcpu->hsched;
 		if (hstate->hit > hstate->miss &&
-			hsched->avg_nr_run > VALID_NR_RUN_DIFF)
+			hsched->avg_nr_run > VALID_RUNNABLE_DIFF)
 			return hcpu->hipi.ipi_slen_ns;
 	}
 
@@ -805,7 +740,7 @@ static s64 apply_tunable(struct halo_cpu *hcpu, s64 expird_time)
 	struct halo_tune *htune = hcpu->htune;
 	if (unlikely(!htune))
 		return expird_time;
-	return expird_time * hcpu->htune->expired_ratio / RATIO_UNIT;
+	return expird_time * hcpu->htune->expired_ratio / HALO_RATIO_UNIT;
 }
 
 /*
@@ -819,14 +754,23 @@ static int halo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 {
 	struct halo_cpu *hcpu = get_hcpu(dev->cpu);
 	s32 i, candi_idx = 0, pred_idx = 0, const_idx = 0;
-	s32 deepest_idx = drv->state_count - 1;
+	s32 deepest_idx = HALO_C2;
 	s64 pred_slen_ns = 0, expired_ns = 0;
 	s64 now = local_clock();
 	enum selector selector = 0;
 
 	/* if valid count lower than two, we don't need to compute next state */
-	if (halo_get_valid_state(drv, dev, &candi_idx) < 2)
+	if (halo_get_valid_state(drv, dev, &candi_idx) < 2) {
+		selector = BY_FORCE;
 		goto end;
+	}
+
+	/* dynamic c-state allowed by ucc */
+	if (!cpumask_test_cpu(dev->cpu, &idle_allowed_mask)) {
+		selector = BY_FORCE;
+		candi_idx = HALO_C1;
+		goto end;
+	}
 
 	/* get cstate data */
 	halo_get_cstate_data(drv, dev, hcpu);
@@ -850,6 +794,7 @@ static int halo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	/* traversing c-state */
 	pred_slen_ns = halo_compute_pred_slen(hcpu, drv);
 	deepest_idx = 0;
+	/* XXX: s2idle? */
 	for (i = 0; i < drv->state_count; i++) {
 		u64 target_residency_ns = hcpu->csd[i].target_residency_ns;
 		u64 exit_latency_ns = hcpu->csd[i].exit_latency_ns;
@@ -880,13 +825,30 @@ static int halo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	}
 	/* limit c-state depth to guarantee latency */
 	if (candi_idx > const_idx) {
-		struct rq *rq = cpu_rq(dev->cpu);
-
 		selector = BY_CONSTRAINT;
 		candi_idx = const_idx;
+	}
 
-		if (rq->avg_idle < hcpu->csd[const_idx].target_residency_ns)
-			*stop_tick = false;
+	if (!candi_idx && hcpu->last_waker != WAKEUP_BY_HALO_TIMER_1ST) {
+		int wake_cnt = hcpu->htick.tick_wakeup;
+		*stop_tick = false;
+
+		if (wake_cnt) {
+			selector = BY_TICK;
+			*stop_tick = true;
+		}
+
+		if (wake_cnt >= 2 ||
+			(wake_cnt && hcpu->last_slen_ns > hcpu->csd[HALO_C2].target_residency_ns)) {
+			selector = BY_LONG_TICK;
+			candi_idx = min(const_idx, HALO_C2);
+			hcpu->htick.tick_wakeup = 0;
+		}
+	}
+
+	if (!candi_idx && cpumask_test_cpu(dev->cpu, &halo_busy_cpus)) {
+		selector = BY_DCT;
+		*stop_tick = false;
 	}
 
 	/* When c-state is not constrainted, use deferred timer to change deeper c-state later */
@@ -896,14 +858,13 @@ static int halo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	halo_timer_start(hcpu, expired_ns);
 
 end:
-	trace_halo_select(hcpu->last_waker, selector, hcpu->last_slen_ns, hcpu->req_latency_ns,
-			hcpu->htick.tick_slen_ns, hcpu->timer_slen_ns, hcpu->hirqs.irq_slen_ns,
-			hcpu->det_slen_ns, pred_slen_ns, expired_ns, candi_idx);
+	trace_halo_select(hcpu, selector, pred_slen_ns, candi_idx, *stop_tick,
+		expired_ns, pred_idx, const_idx, deepest_idx, hcpu->hirqs.irq_slen_ns);
 
 	hcpu->last_slen_ns = now;
 	hcpu->last_idx = candi_idx;
 
-	return hcpu->last_idx;;
+	return hcpu->last_idx;
 }
 
 /*
@@ -939,13 +900,24 @@ static void halo_reflect(struct cpuidle_device *dev, int state)
 		/* wake up by poll */
 		waker = WAKEUP_BY_POLL;
 		dev->poll_time_limit = false;
-	} else if (htick->triggered || slen_ns >= hcpu->det_slen_ns) {
-		/* wake up by next determined event (timer, periodic irq, tick) */
-		htick->triggered = false;
+	} else if (slen_ns >= hcpu->det_slen_ns) {
+		/* wake up by next determined event (timer, periodic irq) */
 		waker = WAKEUP_BY_DET;
+	} else if (htick->triggered) {
+		/*
+		 * Even if halo_tick was invoked, the wakeup reason may not be a tick,
+		 * so tick_wakeup is counted here instead of in halo_tick.
+		 */
+		htick->tick_wakeup++;
+		waker = WAKEUP_BY_TICK;
 	} else {
 		waker = WAKEUP_BY_IPI;
 	}
+
+	if (waker != WAKEUP_BY_TICK)
+		htick->tick_wakeup = 0;
+
+	htick->triggered = false;
 
 	trace_halo_reflect(dev->cpu, waker, slen_ns);
 	hcpu->last_slen_ns = slen_ns;
@@ -1100,20 +1072,19 @@ static struct cpuidle_governor halo_governor = {
 
 static void halo_tunable_init(struct kobject *ems_kobj)
 {
-	struct device_node *dn, *child;
 	int cpu;
 
 	halo_kobj = kobject_create_and_add("halo", ems_kobj);
 	if (!halo_kobj)
 		return;
 
-	dn = of_find_node_by_path("/ems/halo");
-	if (!dn)
-		return;
-
-	for_each_child_of_node(dn, child) {
+	for_each_possible_cpu(cpu) {
 		struct halo_tune *htune;
-		const char *buf;
+		struct ems_cpu_topology *topo = percpu_topology(cpu);
+		int cl_cpu;
+
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
 
 		htune = kzalloc(sizeof(struct halo_tune), GFP_KERNEL);
 		if (!htune) {
@@ -1121,22 +1092,16 @@ static void halo_tunable_init(struct kobject *ems_kobj)
 			return;
 		}
 
-		if (of_property_read_string(child, "cpus", &buf)) {
-			pr_err("%s: cpus property is omitted\n", __func__);
-			return;
-		} else {
-			cpulist_parse(buf, &htune->cpus);
-		}
+		cpumask_copy(&htune->cpus, &topo->cluster_cpus);
 
-		if (of_property_read_u32(child, "expired-ratio", &htune->expired_ratio))
-			htune->expired_ratio = RATIO_UNIT;
+		htune->expired_ratio = HALO_RATIO_UNIT;
 
 		if (kobject_init_and_add(&htune->kobj, &ktype_halo, halo_kobj,
 					"coregroup%d", cpumask_first(&htune->cpus)))
 			return;
 
-		for_each_cpu(cpu, &htune->cpus) {
-			struct halo_cpu *hcpu = get_hcpu(cpu);
+		for_each_cpu(cl_cpu, &htune->cpus) {
+			struct halo_cpu *hcpu = get_hcpu(cl_cpu);
 			hcpu->htune = htune;
 		}
 	}
@@ -1168,7 +1133,11 @@ static void halo_cpu_init(void)
 
 int halo_governor_init(struct kobject *ems_kobj)
 {
+	halo_update_busy_cpus(NULL);
 	halo_tunable_init(ems_kobj);
 	halo_cpu_init();
+
+	update_idle_allowed_mask(cpu_possible_mask);
+
 	return cpuidle_register_governor(&halo_governor);
 }

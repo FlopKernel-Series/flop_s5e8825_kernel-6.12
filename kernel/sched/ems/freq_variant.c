@@ -10,7 +10,7 @@
 #include <linux/cpu_pm.h>
 #include <trace/hooks/cpufreq.h>
 
-#include "ems.h"
+#include <soc/samsung/ems.h>
 
 #define EXIT_RATIO	10
 
@@ -103,7 +103,7 @@ static ssize_t show_resi_table(struct kobject *k, char *buf)
 
 	ret += sprintf(buf + ret, "         Freq     Resi(us)\n");
 	for (idx = 0; idx < table->nr_state; idx++)
-		ret += sprintf(buf + ret, "lv%2d: %8d %6ld us\n", idx,
+		ret += sprintf(buf + ret, "lv%2d: %8d %6lu us\n", idx,
 			table->states[idx].freq,
 			table->states[idx].resi / NSEC_PER_USEC);
 	return ret;
@@ -150,8 +150,8 @@ static struct attribute *fv_attrs[] = {
 	&resi_table_attr.attr,
 	NULL
 };
-
 ATTRIBUTE_GROUPS(fv);
+
 static struct kobj_type ktype_fv = {
 	.sysfs_ops	= &fv_sysfs_ops,
 	.default_groups	= fv_groups,
@@ -238,13 +238,29 @@ static int fv_dt_parse(struct kobject *ems_kobj)
 		struct fv_policy *pol;
 		struct resi_state *states;
 		const char *buf;
-		u32 tmp_size, size;
+		s32 tmp_size, size;
 		u32 tmp_idx, idx;
 		u32 *tmp_states;
+		struct cpumask phy_cpus, phy_pol_cpus;
+		struct ems_cpu_topology *topo;
+		bool need_check_phyid = true;
 
 		if (of_property_read_string(child, "cpus", &buf)) {
-			pr_info("%s: cpus property is omitted\n", __func__);
+			pr_info("%s: physical cpus property is omitted\n", __func__);
 			return -1;
+		}
+
+		if (cpumask_equal(cpu_possible_mask, get_possible_phy_cpus())) {
+			need_check_phyid = false;
+		}
+
+		if (need_check_phyid) {
+			ems_cpulist_parse(buf, &phy_cpus);
+
+			cpumask_and(&phy_pol_cpus, &phy_cpus, get_possible_phy_cpus());
+
+			if (cpumask_empty(&phy_pol_cpus))
+				continue;
 		}
 
 		pol = kzalloc(sizeof(struct fv_policy), GFP_KERNEL);
@@ -252,7 +268,17 @@ static int fv_dt_parse(struct kobject *ems_kobj)
 			pr_info("%s: failed to alloc fv policy \n", __func__);
 			return -1;
 		}
-		cpulist_parse(buf, &pol->cpus);
+
+		if (need_check_phyid) {
+			topo = percpu_topology(get_cpu_log_id(cpumask_first(&phy_pol_cpus)));
+			cpumask_copy(&pol->cpus, &topo->cluster_cpus);
+
+			pr_info("%s: phy_cpus:0x%03x pol_cpus:0x%03x", __func__,
+							*(unsigned int *)cpumask_bits(&phy_cpus),
+							*(unsigned int *)cpumask_bits(&pol->cpus));
+		} else {
+			ems_cpulist_parse(buf, &pol->cpus);
+		}
 
 		/* copy raw data from dt */
 		tmp_size = of_property_count_u32_elems(child, "table");
@@ -269,7 +295,7 @@ static int fv_dt_parse(struct kobject *ems_kobj)
 		/* copy freq, resi to init table from raw table and alloc table */
 		size = tmp_size / 2;
 		states = kzalloc(size * sizeof(struct resi_state), GFP_KERNEL);
-		if (!tmp_states)
+		if (!states)
 			return -1;
 		for (idx = 0, tmp_idx = 0; idx < size; idx++) {
 			states[idx].freq = tmp_states[tmp_idx++];

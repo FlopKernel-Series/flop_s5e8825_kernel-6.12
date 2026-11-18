@@ -2,26 +2,13 @@ subdir-ccflags-y += -I$(KERNEL_SRC)
 
 obj-$(CONFIG_SCHED_EMS) += ems.o
 
+ems-y += main.o hook.o profile.o multi_load.o perf_events.o dslt.o
+ems-y += game/main.o game/fps_profiler.o game/task_profiler.o
+ems-y += game/cpu_profiler.o game/profiler.o game/cleave.o game/dct.o
 
-ems-y += main.o
-ems-y += core.o
-ems-y += energy_table.o
-ems-y += multi_load.o
-ems-y += ontime.o
-ems-y += sparing.o
-ems-y += ecs.o
-ems-y += ecs_dynamic.o
-ems-y += freqboost.o
-ems-y += hook.o
-ems-y += sysbusy.o
-ems-y += frt.o
-ems-y += profile.o
-ems-y += freq_variant.o
-ems-y += ego.o
-ems-y += cpufreq.o
-ems-y += balance.o
-ems-$ += frt.o
-ems-y += gsc.o
-ems-$(CONFIG_SCHED_EMS_TUNE) += tune.o
-ems-$(CONFIG_CPU_IDLE_GOV_HALO) += halo.o
-ems-$(CONFIG_MHDVFS) += mhdvfs.o
+ems-$(CONFIG_SCHED_EMS_CORE_SELECT) += core-select-main.o core.o sysbusy.o frt.o balance.o gsc.o tune.o
+ems-$(CONFIG_SCHED_EMS_FREQ_SELECT) += freq-select-main.o cpufreq.o freqboost.o ego.o energy_table.o
+ems-$(CONFIG_SCHED_EMS_IDLE_SELECT) += idle-select-main.o ecs.o ecs_dynamic.o halo.o freq_variant.o
+ems-$(CONFIG_SCHED_EMS_PAGO) += pago.o
+ems-$(CONFIG_SCHED_EMS_TASK_GROUP) += taskgroup.o
+ems-$(CONFIG_SCHED_EMS_DSU_SLICE_DOWN) += dsu_slice_down.o

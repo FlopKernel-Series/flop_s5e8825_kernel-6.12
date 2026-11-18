@@ -16,11 +16,31 @@
 
 #include <linux/sched.h>
 #include <linux/pm_qos.h>
+#include <linux/sched/cputime.h>
+#include <linux/sched/clock.h>
+#include <linux/sched/isolation.h>
+#include <uapi/linux/sched/types.h>
+#include <linux/cgroup.h>
 #include <linux/cpuidle.h>
+#include <soc/samsung/exynos-cpuhp.h>
+#include <linux/perf_event.h>
+
+#include <soc/samsung/exynos-cpu-phyid.h>
+
+struct ems_profiler_fn {
+	void (*get_frame_cnt)(u64 *cnt, ktime_t *time);
+};
 
 /*
  * Sysbusy
  */
+static const char *sysbusy_state_names[] = {
+	"state0",
+	"state1",
+	"state2",
+	"state3",
+};
+
 enum sysbusy_state {
 	SYSBUSY_STATE0 = 0,
 	SYSBUSY_STATE1,
@@ -41,20 +61,59 @@ struct emstune_mode_request {
 	unsigned int line;
 };
 
-#define EMSTUNE_GAME_MODE		(3)
+#define EMSTUNE_GAME_MODE	(3)
+#define EMSTUNE_BOOST_LEVEL	(2)
 
-#define BITS_OF_BOOST_TYPE		(3)
-#define EMSTUNE_BOOST_TYPE_EXTREME	(1 << (BITS_OF_BOOST_TYPE - 1)) /* Last bit in boost level rage */
-#define EMSTUNE_BOOST_TYPE_MASK		((1 << BITS_OF_BOOST_TYPE) - 1)
-#define EMSTUNE_BOOST_TYPE(type)	(type & EMSTUNE_BOOST_TYPE_MASK)
+/*
+ * EGO
+ */
+enum ego_cpufreq_reason {
+	EGO_REASON_NONE = 0,
+	EGO_REASON_UTIL,
+	EGO_REASON_IO_UTIL,
+	EGO_REASON_FREQ_BOOST,
+	EGO_REASON_HEAVY_TASK,
+	EGO_REASON_PELT_BOOST,
+	EGO_REASON_FCLAMP,
+	EGO_REASON_SOMAC_WALL,
+	EGO_REASON_ADAPTIVE_LOW,
+	EGO_REASON_ADAPTIVE_HIGH,
+	EGO_REASON_ADAPTIVE_NONE,
+	EGO_REASON_LIMITS,
+	EGO_REASON_STEP_ADJUST,
+	EGO_REASON_ADAP_FMAX,
+	EGO_REASON_SUSTAIN_HIGH,
+};
 
-#define BEGIN_OF_MODE_TYPE		BITS_OF_BOOST_TYPE
-#define EMSTUNE_MODE_TYPE_GAME		(1 << (BEGIN_OF_MODE_TYPE + EMSTUNE_GAME_MODE))
-#define EMSTUNE_MODE_TYPE_MASK		((-1) << BEGIN_OF_MODE_TYPE)
+static char *ego_cpufreq_reason_name[] = {
+	"none",
+	"util",
+	"io_util",
+	"freq_boost",
+	"heavy_task",
+	"pelt_boost",
+	"fclamp",
+	"somac_wall",
+	"adaptive_low",
+	"adaptive_high",
+	"adaptive_none",
+	"limits",
+	"step_adjust",
+	"adap_fmax",
+	"sustain_high",
+};
 
-#define EMSTUNE_MODE_TYPE(type)		((type & EMSTUNE_MODE_TYPE_MASK) >> BEGIN_OF_MODE_TYPE)
+#define	THRES_NEW_TASK_COUNT		(10)
 
-#if IS_ENABLED(CONFIG_SCHED_EMS)
+/* EGG */
+struct egg_set_over_freq {
+	void (*ctrl_boost_freq)(bool enabled, u32 cpu, u64 freq);
+};
+
+/*
+ * EXTERN for CORE SELECTION
+ */
+#ifdef CONFIG_SCHED_EMS_CORE_SELECT
 extern int emstune_get_cur_mode(void);
 extern int emstune_get_cur_level(void);
 
@@ -71,56 +130,123 @@ extern int emstune_unregister_notifier(struct notifier_block *nb);
 
 extern int emstune_cpu_dsu_table_index(void *_set);
 
-extern int ecs_request_register(char *name, const struct cpumask *mask);
-extern int ecs_request_unregister(char *name);
-extern int ecs_request(char *name, const struct cpumask *mask);
-
-extern void et_init_dsu_table(unsigned long *freq_table, unsigned int *volt_table, int size);
-extern void et_register_dsu_constraint(int cpu, void *p, int size);
-
 extern int sysbusy_register_notifier(struct notifier_block *nb);
 extern int sysbusy_unregister_notifier(struct notifier_block *nb);
-extern void halo_register_periodic_irq(int irq_num, const char *name, struct cpumask *cpus, void (*fn)(u64 *cnt, ktime_t *time));
-extern void halo_update_periodic_irq(int irq_num, u64 cnt, ktime_t last_update_ns, ktime_t period_ns);
-extern void halo_unregister_periodic_irq(int irq_num);
 
-extern void register_mhdvfs_dsufreq_callback(void (*callback)(int ratio, int period_ns));
-extern void register_mhdvfs_miffreq_callback(void (*callback)(int ratio));
-extern void register_mhdvfs_cpufreq_callback(void (*callback)(int *ratio));
-#else
-static inline void stt_acquire_gmc_boost(int step, int cnt) { }
-static inline void stt_release_gmc_boost(void) { }
-static inline int emstune_get_cur_mode(void) { return -1; }
-static inline int emstune_get_cur_level(void) { return -1; }
+extern void emstune_set_sched_io_boost(int boost);
+extern void emstune_set_ta_binding(struct cpumask *mask);
+
+extern void ems_profiler_register_fn(struct ems_profiler_fn *fn);
+
+extern int egg_eb_register(struct egg_set_over_freq *fn);
+
+#else /* CONFIG_SCHED_EMS_CORE_SELECT */
+static inline void stt_acquire_gmc_boost(int step, int cnt) { };
+static inline void stt_release_gmc_boost(void) { };
 
 #define emstune_add_request(req)	do { } while(0);
-static inline void __emstune_add_request(struct emstune_mode_request *req, char *func, unsigned int line) { }
-static inline void emstune_update_request(struct emstune_mode_request *req, s32 new_value) { }
-static inline void emstune_remove_request(struct emstune_mode_request *req) { }
-static inline void emstune_boost(struct emstune_mode_request *req, int enable) { }
+static inline int emstune_get_cur_mode(void) { return -1; };
+static inline int emstune_get_cur_level(void) { return -1; };
 
-static inline int emstune_register_notifier(struct notifier_block *nb) { return 0; }
-static inline int emstune_unregister_notifier(struct notifier_block *nb) { return 0; }
+static inline void __emstune_add_request(struct emstune_mode_request *req, char *func, unsigned int line) { };
+static inline void emstune_update_request(struct emstune_mode_request *req, s32 new_value) { };
+static inline void emstune_remove_request(struct emstune_mode_request *req) { };
+static inline void emstune_boost(struct emstune_mode_request *req, int enable) { };
 
-static inline int emstune_cpu_dsu_table_index(void *_set) { return 0; }
+static inline int emstune_register_notifier(struct notifier_block *nb) { return 0; };
+static inline int emstune_unregister_notifier(struct notifier_block *nb) { return 0; };
 
-static inline int ecs_request_register(char *name, const struct cpumask *mask) { return 0; }
-static inline int ecs_request_unregister(char *name) { return 0; }
-static inline int ecs_request(char *name, const struct cpumask *mask) { return 0; }
-
-static inline void et_init_dsu_table(unsigned long *freq_table, unsigned int *volt_table, int size) { }
-static inline void et_register_dsu_constraint(int cpu, void *p, int size) { }
+static inline int emstune_cpu_dsu_table_index(void *_set) { return 0; };
 
 static inline int sysbusy_register_notifier(struct notifier_block *nb) { return 0; };
 static inline int sysbusy_unregister_notifier(struct notifier_block *nb) { return 0; };
 
+static inline void emstune_set_sched_io_boost(int boost) { };
+
+static inline void ems_profiler_register_fn(struct ems_profiler_fn *fn) { };
+
+static inline int egg_eb_register(struct egg_set_over_freq *fn) { return 0; };
+#endif /* CONFIG_SCHED_EMS_CORE_SELECT */
+
+/*
+ * EXTERN for FREQ SELECTION
+ */
+#ifdef CONFIG_SCHED_EMS_FREQ_SELECT
+extern void et_register_dsu_constraint(int cpu, void *p, int size);
+extern void et_arch_set_freq_scale(const struct cpumask *cpus,
+		unsigned long freq,  unsigned long max, unsigned long *scale);
+extern int ego_set_adaptive_freq(unsigned int cpu, unsigned int low_freq, unsigned int high_freq);
+extern int ego_get_adaptive_freq(unsigned int cpu, unsigned int *low_freq, unsigned int *high_freq);
+extern int ego_reset_adaptive_freq(unsigned int cpu, bool release);
+extern int ego_get_update_reason(struct cpufreq_policy *policy);
+extern int ego_get_flag(struct cpufreq_policy *policy);
+extern int ego_set_margin_util_target(int cpu, unsigned int target_util);
+extern void mlt_cpufreq_transition_notifier(int domain_id, unsigned int next_freq);
+extern int et_register_notifier(struct notifier_block *nb);
+#else /* CONFIG_SCHED_EMS_FREQ_SELECT */
+static inline void et_register_dsu_constraint(int cpu, void *p, int size) { };
+static inline void et_arch_set_freq_scale(const struct cpumask *cpus,
+		unsigned long freq,  unsigned long max, unsigned long *scale) { };
+static inline int ego_set_adaptive_freq(unsigned int cpu, unsigned int low_freq, unsigned int high_freq) { return -ENODEV; };
+static inline int ego_get_adaptive_freq(unsigned int cpu, unsigned int *low_freq, unsigned int *high_freq) { return -ENODEV; };
+static inline int ego_reset_adaptive_freq(unsigned int cpu, bool release) { return -ENODEV; };
+static inline int ego_get_update_reason(struct cpufreq_policy *policy) { return -1; };
+static inline int ego_get_flag(struct cpufreq_policy *policy) { return -1; };
+static inline void mlt_cpufreq_transition_notifier(int domain_id, unsigned int next_freq) { };
+static inline int et_register_notifier(struct notifier_block *nb) { return 0; };
+#endif /* CONFIG_SCHED_EMS_FREQ_SELECT */
+
+/*
+ * EXTERN for IDLE SELECTION
+ */
+enum ecs_type {
+	ECS_MIN = 0,
+	ECS_MAX = 1,
+	ECS_RECOMMEND = 2,
+};
+#ifdef CONFIG_SCHED_EMS_IDLE_SELECT
+extern int ecs_request_register(char *name, const struct cpumask *mask, enum ecs_type type);
+extern int ecs_request_unregister(char *name, enum ecs_type type);
+extern int ecs_request(char *name, const struct cpumask *mask, enum ecs_type type);
+extern int ecs_request_wo_migrate(char *name, const struct cpumask *mask, enum ecs_type type);
+extern void halo_register_periodic_irq(int irq_num, const char *name, struct cpumask *cpus, void (*fn)(u64 *cnt, ktime_t *time));
+extern void halo_update_periodic_irq(int irq_num, u64 cnt, ktime_t last_update_ns, ktime_t period_ns);
+extern void halo_unregister_periodic_irq(int irq_num);
+#else /* CONFIG_SCHED_EMS_IDLE_SELECT */
+static inline int ecs_request_register(char *name, const struct cpumask *mask, enum ecs_type type) {
+	return exynos_cpuhp_add_request(name, mask);
+};
+static inline int ecs_request_unregister(char *name, enum ecs_type type) {
+	return exynos_cpuhp_remove_request(name);
+};
+static inline int ecs_request(char *name, const struct cpumask *mask, enum ecs_type type) {
+	return exynos_cpuhp_update_request(name, mask);
+};
+static inline int ecs_request_wo_migrate(char *name, const struct cpumask *mask, enum ecs_type type) {
+	return exynos_cpuhp_update_request(name, mask);
+};
 static inline void halo_register_periodic_irq(int irq_num, const char *name, struct cpumask *cpus, void (*fn)(u64 *cnt, ktime_t *time)) { };
 static inline void halo_update_periodic_irq(int irq_num, u64 cnt, ktime_t last_update_ns, ktime_t period_ns) { };
 static inline void halo_unregister_periodic_irq(int irq_num) { };
+#endif /* CONFIG_SCHED_EMS_IDLE_SELECT */
 
+/* MH DVFS */
+#ifdef CONFIG_MHDVFS
+extern void register_mhdvfs_dsufreq_callback(void (*callback)(int ratio, int period_ns));
+extern void register_mhdvfs_miffreq_callback(void (*callback)(int ratio));
+extern void register_mhdvfs_cpufreq_callback(void (*callback)(int *ratio));
+#else
 static inline void register_mhdvfs_dsufreq_callback(void (*callback)(int ratio)) { };
 static inline void register_mhdvfs_miffreq_callback(void (*callback)(int ratio)) { };
 static inline void register_mhdvfs_cpufreq_callback(void (*callback)(int *ratio)) { };
+#endif
+
+extern struct perf_event *exynos_perf_create_kernel_counter(struct perf_event_attr *attr, int cpu,
+		struct task_struct *task, perf_overflow_handler_t overflow_handler, void *context);
+extern int exynos_perf_event_release_kernel(struct perf_event *event);
+
+#ifdef CONFIG_SCHED_EMS_PAGO
+extern int pago_emstune_boost(bool boost);
 #endif
 
 #endif	/* ENDIF _LINUX_EMS_H */

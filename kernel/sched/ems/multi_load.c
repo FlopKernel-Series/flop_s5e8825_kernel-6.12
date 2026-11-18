@@ -1,14 +1,39 @@
 /*
  * Multi-purpose Load tracker
  *
- * Copyright (C) 2018 Samsung Electronics Co., Ltd
- * Park Bumgyu <bumgyu.park@samsung.com>
+ * Copyright (C) 2023 Samsung Electronics Co., Ltd
+ * S.LSI, SoC Dev, APSW Team, CPUSW&Performance Part
  */
-
-#include "ems.h"
+#include <soc/samsung/ems.h>
 
 #include <trace/events/ems.h>
 #include <trace/events/ems_debug.h>
+
+static bool mlt_disabled = true;
+struct mlt_cluster mlt_clusters[MLT_MAX_CLUSTER_NUM];
+struct mlt_cpu __percpu *pcpu_mlt;		/* active ratio tracking */
+
+const char *mlt_load_flag_name[] = {
+	"new_task",
+	"wakeup_task",
+	"update_task",
+	"put_prev_task",
+	"pick_next_task",
+	"update_blocked_load",
+};
+
+static bool mlt_constant_load = false;
+static bool ntu_ipc_min_lock = false;
+
+bool need_sustain_high_boost(void)
+{
+	int cur_mode = emstune_get_cur_mode();
+
+	if ((cur_mode == 0 || cur_mode == 2) && gsc_boost_activated())
+		return true;
+	else
+		return false;
+}
 
 /******************************************************************************
  *                           MULTI LOAD for TASK                              *
@@ -20,12 +45,12 @@
  */
 unsigned long ml_task_util(struct task_struct *p)
 {
-	return READ_ONCE(p->se.avg.util_avg);
-}
+	struct dslt_avg *dsa = &ems_dslt_task(p)->avg;
 
-int ml_task_hungry(struct task_struct *p)
-{
-	return 0; /* HACK */
+	if (need_sustain_high_boost() && ems_sustain_high(p))
+		return (1 << SCHED_CAPACITY_SHIFT);
+	else
+		return READ_ONCE(dsa->runnable_avg);
 }
 
 /*
@@ -34,9 +59,10 @@ int ml_task_hungry(struct task_struct *p)
  * Task utilization with util-est, The calculation is the same as
  * task_util_est of cfs.
  */
-static unsigned long _ml_task_util_est(struct task_struct *p)
+unsigned long _ml_task_util_est(struct task_struct *p)
 {
-	return READ_ONCE(p->se.avg.util_est) & ~UTIL_AVG_UNCHANGED;
+	struct dslt_avg *dsa = &ems_dslt_task(p)->avg;
+	return READ_ONCE(dsa->util_est) & ~UTIL_AVG_UNCHANGED;
 }
 
 unsigned long ml_task_util_est(struct task_struct *p)
@@ -44,12 +70,16 @@ unsigned long ml_task_util_est(struct task_struct *p)
 	return max(ml_task_util(p), _ml_task_util_est(p));
 }
 
-/*
- * ml_task_load_avg - task load_avg
- */
-unsigned long ml_task_load_avg(struct task_struct *p)
+unsigned long ml_task_util_wo_boost(struct task_struct *p)
 {
-	return READ_ONCE(p->se.avg.load_avg);
+	struct dslt_avg *dsa = &ems_dslt_task(p)->avg;
+
+	return READ_ONCE(dsa->runnable_avg);
+}
+
+unsigned long ml_task_util_est_wo_boost(struct task_struct *p)
+{
+	return max(ml_task_util_wo_boost(p), _ml_task_util_est(p));
 }
 
 /******************************************************************************
@@ -58,18 +88,48 @@ unsigned long ml_task_load_avg(struct task_struct *p)
 /*
  * ml_cpu_util - cpu utilization
  */
-unsigned long ml_cpu_util(int cpu)
+unsigned long ml_cpu_util_avg(int cpu)
 {
-	struct cfs_rq *cfs_rq;
+	struct ems_dslt_rq *drq = ems_rq_dslt(cpu_rq(cpu));
 	unsigned int util;
 
-	cfs_rq = &cpu_rq(cpu)->cfs;
-	util = READ_ONCE(cfs_rq->avg.util_avg);
+	util = READ_ONCE(drq->avg.runnable_avg);
 
-	util = max(util, READ_ONCE(cfs_rq->avg.util_est));
-
-	return min_t(unsigned long, util, capacity_cpu_orig(cpu));
+	return min_t(unsigned long, util, ems_get_actual_cpu_capacity(cpu));
 }
+EXPORT_SYMBOL_GPL(ml_cpu_util_avg);
+
+unsigned long ml_cpu_util_with_irq(struct rq *rq, int util)
+{
+	unsigned long cap, irq_util;
+
+	if (!egg_enabled())
+		return util;
+
+	cap = ems_get_origin_cpu_capacity(rq->cpu);
+	irq_util = cpu_util_irq(rq);
+	if (unlikely(irq_util >= cap)) {
+		return cap;
+	}
+
+	return irq_util + scale_irq_capacity(util, irq_util, cap);
+}
+EXPORT_SYMBOL_GPL(ml_cpu_util_with_irq);
+
+/*
+ * ml_cpu_util - cpu utilization
+ */
+unsigned long ml_cpu_util(int cpu)
+{
+	struct ems_dslt_rq *drq = ems_rq_dslt(cpu_rq(cpu));
+	unsigned int util;
+
+	util = READ_ONCE(drq->avg.runnable_avg);
+	util = max(util, READ_ONCE(drq->avg.util_est));
+
+	return min_t(unsigned long, util, ems_get_actual_cpu_capacity(cpu));
+}
+EXPORT_SYMBOL_GPL(ml_cpu_util);
 
 /*
  * Remove and clamp on negative, from a local variable.
@@ -82,33 +142,44 @@ unsigned long ml_cpu_util(int cpu)
 	*ptr -= min_t(typeof(*ptr), *ptr, _val);		\
 } while (0)
 
+unsigned long ml_cpu_irq_load(int cpu)
+{
+#ifdef CONFIG_HAVE_SCHED_AVG_IRQ
+	struct rq *rq = cpu_rq(cpu);
+
+	return rq->avg_irq.util_avg;
+#else
+	return 0;
+#endif
+}
+
 /*
  * ml_cpu_util_without - cpu utilization without waking task
  */
 unsigned long ml_cpu_util_without(int cpu, struct task_struct *p)
 {
-	struct sched_avg *_avg = &cpu_rq(cpu)->cfs.avg;
-	unsigned long cpu_util, cpu_util_est;
+	struct dslt_avg  *_avg = &ems_rq_dslt(cpu_rq(cpu))->avg;
+	struct ems_dslt_task *dtsk = ems_dslt_task(p);
+	unsigned long cpu_util = READ_ONCE(_avg->runnable_avg);
+	unsigned long cpu_util_est = READ_ONCE(_avg->util_est);
 
-	/* Calculate util avg */
-	cpu_util = READ_ONCE(_avg->util_avg);
-	if (cpu == task_cpu(p) && READ_ONCE(p->se.avg.last_update_time)) {
-		unsigned long task_util = ml_task_util(p);
+	if (cpu == task_cpu(p)) {
+		unsigned long task_util, task_util_est;
 
-		task_util = max(task_util, (unsigned long)1);
-		lsub_positive(&cpu_util, task_util);
-	}
+		if (READ_ONCE(dtsk->avg.last_update_time)) {
+			task_util = max(ml_task_util(p), (unsigned long)1);
+			lsub_positive(&cpu_util, task_util);
+		}
 
-	/* Calcuate util est */
-	cpu_util_est = READ_ONCE(_avg->util_est);
-	if (task_on_rq_queued(p) || current == p) {
-		unsigned long task_util_est = _ml_task_util_est(p);
-		task_util_est = max(task_util_est, (unsigned long)1);
-		lsub_positive(&cpu_util_est, task_util_est);
+		if (task_on_rq_queued(p) || current == p) {
+			task_util_est = max(_ml_task_util_est(p), (unsigned long)1);
+			lsub_positive(&cpu_util_est, task_util_est);
+		}
 	}
 
 	cpu_util = max(cpu_util, cpu_util_est);
-	return min_t(unsigned long, cpu_util, capacity_cpu_orig(cpu));
+
+	return min_t(unsigned long, cpu_util, ems_get_actual_cpu_capacity(cpu));
 }
 
 /*
@@ -129,23 +200,15 @@ unsigned long ml_cpu_util_without(int cpu, struct task_struct *p)
  */
 unsigned long ml_cpu_util_with(struct task_struct *p, int cpu)
 {
-	struct sched_avg *_avg = &cpu_rq(cpu)->cfs.avg;
-	unsigned long cpu_util, cpu_util_est;
+	struct dslt_avg *_avg = &ems_rq_dslt(cpu_rq(cpu))->avg;
+	unsigned long cpu_util = READ_ONCE(_avg->runnable_avg);
+	unsigned long cpu_util_est = READ_ONCE(_avg->util_est);
 
-	/* Calculate util avg */
-	cpu_util = READ_ONCE(_avg->util_avg);
 	if (cpu != task_cpu(p)) {
-		unsigned long task_util = ml_task_util(p);
-
-		cpu_util += max(task_util, (unsigned long)1);
-	}
-
-	/* Calcuate util est */
-	cpu_util_est = READ_ONCE(_avg->util_est);
-	if (task_cpu(p) != cpu || !task_on_rq_queued(p)) {
-		unsigned long task_util_est = _ml_task_util_est(p);
-
-		cpu_util_est += max(task_util_est, (unsigned long)1);
+		cpu_util += max(ml_task_util(p), (unsigned long)1);
+		cpu_util_est += max(_ml_task_util_est(p), (unsigned long)1);
+	} else if (!task_on_rq_queued(p)) {
+		cpu_util_est += max(_ml_task_util_est(p), (unsigned long)1);
 	}
 
 	cpu_util = max(cpu_util, cpu_util_est);
@@ -153,12 +216,24 @@ unsigned long ml_cpu_util_with(struct task_struct *p, int cpu)
 	return cpu_util;
 }
 
-/*
- * ml_cpu_load_avg - cpu load_avg
- */
-unsigned long ml_cpu_load_avg(int cpu)
+bool mlt_get_constant_load(void)
 {
-	return cpu_rq(cpu)->cfs.avg.load_avg;
+	return mlt_constant_load;
+}
+
+int mlt_cluster_index(int cpu)
+{
+	struct mlt_cpu *mlt_cpu = per_cpu_ptr(pcpu_mlt, cpu);
+	struct mlt_cluster *mcl = &mlt_clusters[mlt_cpu->cluster];
+
+	return mcl->idx;
+}
+
+struct cpumask *mlt_cluster_cpus(int index)
+{
+	struct mlt_cluster *mcl = &mlt_clusters[index];
+
+	return &mcl->cpus;
 }
 
 /******************************************************************************
@@ -166,14 +241,40 @@ unsigned long ml_cpu_load_avg(int cpu)
  ******************************************************************************/
 static int ntu_ratio[CGROUP_COUNT];
 
-void ntu_apply(struct sched_entity *se)
+static inline bool is_topapp_constant_load(int grp_idx)
 {
+	return (mlt_constant_load && grp_idx == CGROUP_TOPAPP);
+}
+
+#define NTU_BOOST_RATIO		(90)
+void ntu_apply(struct task_struct *p)
+{
+	struct sched_entity *se = &p->se;
 	struct sched_avg *sa = &se->avg;
+	struct sched_entity *pse = &current->se;
+	struct sched_avg *psa = &pse->avg;
 	int grp_idx = cpuctl_task_group_idx(task_of(se));
 	int ratio = ntu_ratio[grp_idx];
+	bool sustain_high = profile_get_sustain_high();
+	u32 ntu_ipc = mlt_tsk_uarch(current, MLT_UARCH_TSK_IPC, 2);
 
-	sa->util_avg = sa->util_avg * ratio / 100;
-	sa->runnable_avg = sa->runnable_avg * ratio / 100;
+	/*
+	 * When new task is generated,
+	 * accumulate recent_new_task in system_profile_data immediately.
+	 * It is used for task burst boost.
+	 */
+	profile_accumulate_new_task_count();
+
+	if (is_topapp_constant_load(grp_idx))
+		ratio = NTU_BOOST_RATIO;
+
+	sa->util_avg = psa->util_avg * ratio / 100;
+	sa->runnable_avg = psa->runnable_avg * ratio / 100;
+	sa->util_sum = psa->util_sum * ratio / 100;
+	sa->runnable_sum = psa->runnable_sum * ratio / 100;
+
+	trace_ntu_apply(p, sa, sustain_high, mlt_constant_load, ntu_ipc_min_lock,
+		ratio, ntu_ipc);
 }
 
 static int
@@ -198,132 +299,420 @@ void ntu_init(struct kobject *ems_kobj)
 	int i;
 
 	for (i = 0; i < CGROUP_COUNT; i++)
-		ntu_ratio[i] = 100;
+		ntu_ratio[i] = 0;
 
 	emstune_register_notifier(&ntu_emstune_notifier);
 }
 
 /******************************************************************************
- *                             Multi load tracking                            *
+ *                           MULTI LOAD for UARCH			      *
  ******************************************************************************/
-struct mlt __percpu *pcpu_mlt;		/* active ratio tracking */
-static struct mlt __percpu *pcpu_mlt_cs;	/* c-state tracking */
+static bool uarch_supported;
+static inline int part_move_period(int period, int count);
 
-static inline int mlt_move_period(int period, int count)
-{
-	return (period + count + MLT_PERIOD_COUNT) % MLT_PERIOD_COUNT;
-}
-
-enum track_type {
-	TRACK_TIME,
-	TRACK_IPC,
-	TRACK_MSPC,
+enum pmu_event {
+	CPU_CYCLE,
+	INST_RETIRED,
+	NUM_OF_PMU_DATA,
 };
 
-static void mlt_update_periods(enum track_type type, struct mlt *mlt,
-				int cur_period, int count, int value)
+int pmu_event_id[NUM_OF_PMU_DATA] = {
+	ARMV8_PMUV3_PERFCTR_CPU_CYCLES,
+	ARMV8_PMUV3_PERFCTR_INST_RETIRED,
+};
+
+static int mlt_cpu_pmu_event_tbl[MLT_RAW_CPU_NUM] = {
+	CPU_CYCLE,
+	INST_RETIRED,
+};
+
+static int mlt_tsk_pmu_event_tbl[MLT_RAW_TSK_NUM] = {
+	CPU_CYCLE,
+	INST_RETIRED,
+};
+
+struct pmu_data {
+	int				cpu;
+	struct perf_event	*pe[NUM_OF_PMU_DATA];
+	/* pmu event data */
+};
+static DEFINE_PER_CPU(struct pmu_data, pmu_data);
+
+static u64 read_pmu_events(struct pmu_data *data, int idx)
 {
-	int **periods;
+	u64 ret = 0;
+
+	if (data->pe[idx])
+		perf_event_read_local(data->pe[idx], &ret, NULL, NULL);
+
+	return ret;
+}
+
+static int activate_pmu_events(struct pmu_data *data)
+{
+	struct perf_event *pe;
+	struct perf_event_attr *pe_attr;
 	int i;
 
-	switch (type) {
-	case TRACK_TIME:
-		periods = mlt->periods;
-		break;
-	case TRACK_IPC:
-		periods = mlt->uarch->ipc_periods;
-		break;
-	case TRACK_MSPC:
-		periods = mlt->uarch->mspc_periods;
-		break;
+	pe_attr = kzalloc(sizeof(struct perf_event_attr), GFP_KERNEL);
+	if (!pe_attr) {
+		pr_err("failed to allocate perf event attr\n");
+		return -ENOMEM;
 	}
 
-	while (count--) {
-		cur_period = mlt_move_period(cur_period, 1);
-		for (i = 0; i < mlt->state_count; i++) {
-			if (i == mlt->state)
-				periods[i][cur_period] = value;
-			else
-				periods[i][cur_period] = 0;
+	pe_attr->size = (u32)sizeof(struct perf_event_attr);
+	pe_attr->type = PERF_TYPE_RAW;
+	pe_attr->pinned = 1;
+	pe_attr->config1 = 1;	/* enable 64-bit counter */
+
+	for (i = 0; i < NUM_OF_PMU_DATA; i++) {
+		pe_attr->config = pmu_event_id[i];
+
+		pe = exynos_perf_create_kernel_counter(pe_attr, data->cpu, NULL, NULL, NULL);
+		if (!pe) {
+			pr_err("failed to create kernel perf event. CPU=%d\n", data->cpu);
+			kfree(pe_attr);
+			return -ENOMEM;
+		}
+		data->pe[i] = pe;
+	}
+
+	kfree(pe_attr);
+
+	return 0;
+}
+
+static void deactivate_pmu_events(struct pmu_data *data)
+{
+	int i;
+
+	for (i = 0; i < NUM_OF_PMU_DATA; i++) {
+		if (data->pe[i]) {
+			exynos_perf_event_release_kernel(data->pe[i]);
+			data->pe[i] = NULL;
 		}
 	}
 }
 
-static void mlt_recent_elapsed(enum track_type type,
-				struct mlt *mlt, int cur_period)
+static int mlt_cpu_up(unsigned int cpu)
 {
-	int i;
-	int **periods;
-	int *recent;
-	u64 *recent_sum;
+	struct pmu_data *data = &per_cpu(pmu_data, cpu);
 
-	switch (type) {
-	case TRACK_TIME:
-		periods = mlt->periods;
-		recent = mlt->recent;
-		recent_sum = mlt->recent_sum;
+	if (activate_pmu_events(data) < 0) {
+		pr_err("%s: failed to enable pmu events. CPU=%d\n", __func__, cpu);
+		return 0;
+	}
+
+	return 0;
+}
+
+static int mlt_cpu_down(unsigned int cpu)
+{
+	struct pmu_data *data = &per_cpu(pmu_data, cpu);
+
+	deactivate_pmu_events(data);
+
+	return 0;
+}
+
+static int mlt_pmu_init(void) {
+	int cpu;
+	int cpuhp_state;
+
+	cpus_read_lock();
+
+	for_each_possible_cpu(cpu) {
+		struct pmu_data *data = &per_cpu(pmu_data, cpu);
+		data->cpu = cpu;
+		if (activate_pmu_events(data)) {
+			pr_err("failed to enable pmu events. CPU=%d\n", cpu);
+			return -ENOMEM;
+		}
+		pr_info("cpu%d: mlt pmu event init complete.\n", cpu);
+	}
+
+	cpuhp_state = cpuhp_setup_state_nocalls_cpuslocked(CPUHP_AP_ONLINE_DYN, "mlt", mlt_cpu_up, mlt_cpu_down);
+	cpus_read_unlock();
+
+	if (cpuhp_state < 0) {
+		pr_err("%s: failed to init mlt hotplug\n", __func__);
+		return cpuhp_state;
+	}
+
+	return 0;
+}
+
+static u64 get_cpu_uarch(enum mlt_uarch_cpu uarch_id, struct mlt_uarch_raw *raw)
+{
+	u64 ret = 0;
+
+	switch (uarch_id) {
+	case MLT_UARCH_CPU_IPC:
+		if (likely(raw[MLT_RAW_CPU_CPU_CYCLE].contrib))
+			ret = (raw[MLT_RAW_CPU_INST_RETIRED].contrib << 10) /
+					raw[MLT_RAW_CPU_CPU_CYCLE].contrib;
 		break;
-	case TRACK_IPC:
-		periods = mlt->uarch->ipc_periods;
-		recent = mlt->uarch->ipc_recent;
-		recent_sum = mlt->uarch->inst_ret_sum;
-		break;
-	case TRACK_MSPC:
-		periods = mlt->uarch->mspc_periods;
-		recent = mlt->uarch->mspc_recent;
-		recent_sum = mlt->uarch->mem_stall_sum;
+	default:
 		break;
 	}
 
-	for (i = 0; i < mlt->state_count; i++)
-		periods[i][cur_period] = recent[i];
-
-	memset(recent_sum, 0, sizeof(u64) * mlt->state_count);
-	memset(recent, 0, sizeof(int) * mlt->state_count);
+	return ret;
 }
 
-static inline u64 mlt_contrib(u64 value, u64 contrib, u64 total)
+static u64 get_tsk_uarch(enum mlt_uarch_tsk uarch_id, struct mlt_uarch_raw *raw)
 {
-	if (unlikely(!total))
-		return 0;
+	u64 ret = 0;
 
-	/* multiply by 1024 to minimize dropping decimal place */
-	return div64_u64(value * contrib << SCHED_CAPACITY_SHIFT, total);
+	switch (uarch_id) {
+	case MLT_UARCH_TSK_IPC:
+		if (likely(raw[MLT_RAW_TSK_CPU_CYCLE].contrib))
+			ret = (raw[MLT_RAW_TSK_INST_RETIRED].contrib << 10) /
+					raw[MLT_RAW_TSK_CPU_CYCLE].contrib;
+		break;
+	default :
+		break;
+	}
+
+	return ret;
 }
 
-static void mlt_update_recent(enum track_type type, struct mlt *mlt,
-				u64 contrib, u64 period_size)
+static void
+mlt_update_uarch_recent(struct mlt_env *env, u64 *contrib,
+			int num_of_raw, int num_of_uarch)
 {
-	int state = mlt->state;
-	int *recent;
-	u64 *recent_sum;
+	int idx;
 
-	if (state < 0)
+	if (env->part->state == INACTIVE)
 		return;
 
-	switch (type) {
-	case TRACK_TIME:
-		recent = mlt->recent;
-		recent_sum = mlt->recent_sum;
-		break;
-	case TRACK_IPC:
-		recent = mlt->uarch->ipc_recent;
-		recent_sum = mlt->uarch->inst_ret_sum;
-		break;
-	case TRACK_MSPC:
-		recent = mlt->uarch->mspc_recent;
-		recent_sum = mlt->uarch->mem_stall_sum;
-		break;
+	for (idx = 0; idx < num_of_raw; idx++)
+		env->raw[idx].contrib += contrib[idx];
+
+	for (idx = 0; idx < num_of_uarch; idx++) {
+		if (env->is_task)
+			env->uarch[idx].recent = (u32) get_tsk_uarch(idx, env->raw);
+		else
+			env->uarch[idx].recent = (u32) get_cpu_uarch(idx, env->raw);
 	}
 
-	recent_sum[state] += contrib;
-	recent[state] = div64_u64(
-		recent_sum[state] << SCHED_CAPACITY_SHIFT, period_size);
 }
 
-static void __mlt_update(enum track_type type, struct mlt *mlt,
-				int period, int period_count, u64 contrib,
-				u64 remain, u64 period_size, u64 period_value)
+static void
+mlt_uarch_update_recent_elapsed(struct mlt_env *env, int num_of_raw,
+				int num_of_uarch, int cur_period, u32 *val)
+{
+	int idx;
+
+	for (idx = 0; idx < num_of_raw; idx++)
+		env->raw[idx].contrib = 0;
+
+	for (idx = 0; idx < num_of_uarch; idx++) {
+		env->uarch[idx].periods[cur_period] = env->uarch[idx].recent;
+		val[idx] = env->uarch[idx].periods[cur_period];
+		env->uarch[idx].recent = 0;
+	}
+}
+
+static void
+mlt_uarch_update_periods(struct mlt_env *env, int num_of_uarch,
+			int cur_period, int count, u32 *val)
+{
+	int idx;
+
+	while (count--) {
+		cur_period = part_move_period(cur_period, 1);
+
+		if (env->part->state == ACTIVE) {
+			for (idx = 0; idx < num_of_uarch; idx++)
+				env->uarch[idx].periods[cur_period] = val[idx];
+		} else {
+			for (idx = 0; idx < num_of_uarch; idx++)
+				env->uarch[idx].periods[cur_period] = 0;
+		}
+	}
+}
+
+static int
+_mlt_update_uarch(struct mlt_env *env, u64 *contrib, u64 *remain,
+			int num_of_raw, int num_of_uarch, int prd_cnt)
+{
+	int period = env->is_task ? env->part->active_period : env->part->cur_period;
+
+	/* (1) update recent period */
+	mlt_update_uarch_recent(env, contrib, num_of_raw, num_of_uarch);
+	if (prd_cnt) {
+		u32 val[MLT_MAX_RAW_NUM] = { 0, };
+		int count = prd_cnt;
+
+		/* (2) store recent period to period history */
+		period = part_move_period(period, 1);
+		mlt_uarch_update_recent_elapsed(env, num_of_raw,
+						num_of_uarch, period, val);
+
+		/* (3) update fully elapsed period */
+		count--;
+		count = min(count, MLT_PERIOD_COUNT);
+
+		if (env->is_task && env->part->state == INACTIVE)
+			return count;
+
+		mlt_uarch_update_periods(env, num_of_uarch, period, count, val);
+
+		/* (4) store remain time to recent period */
+		mlt_update_uarch_recent(env, remain, num_of_raw, num_of_uarch);
+	}
+
+	return 0;
+}
+
+static void
+mlt_update_uarch_raw(struct mlt_env *env, int *raw_tbl, int num_of_raw,
+			u64 *contrib, u64 *remain, u64 remain_t, u64 now,
+			u64 period_count)
+{
+	struct pmu_data *data;
+	u64 remain_ratio = 0;
+	int idx, last_period;
+	bool valid = likely(now > env->part->last_updated);
+
+	data = &per_cpu(pmu_data, smp_processor_id());
+	if (unlikely(!data))
+		return;
+
+	if (likely(valid) && period_count)
+		remain_ratio = (remain_t << 10) / (now - env->part->last_updated);
+
+	last_period = part_move_period(env->part->cur_period, period_count);
+	for (idx = 0; idx < num_of_raw; idx++) {
+		u64 val = read_pmu_events(data, raw_tbl[idx]);
+
+		if (likely(valid) && env->part->state == ACTIVE)
+			contrib[idx] = max((u64) 0, (val - env->raw[idx].last));
+
+		if (remain_ratio) {
+			remain[idx] = ((contrib[idx] * remain_ratio) >> 10);
+			contrib[idx] = max((u64) 0, (contrib[idx] - remain[idx]));
+		}
+
+		env->raw[idx].last = val;
+	}
+}
+
+static void
+mlt_update_uarch(struct mlt_env *env, u64 now, u64 remain_t, int prd_cnt)
+{
+	int *raw_tbl = env->is_task ? mlt_tsk_pmu_event_tbl : mlt_cpu_pmu_event_tbl;
+	int num_of_raw = env->is_task ? MLT_RAW_TSK_NUM : MLT_RAW_CPU_NUM;
+	int num_of_uarch = env->is_task ? MLT_UARCH_TSK_NUM : MLT_UARCH_CPU_NUM;
+	u64 contrib[MLT_MAX_RAW_NUM] = { 0, }, remain[MLT_MAX_RAW_NUM] = { 0 , };
+	int idle_prd_cnt;
+
+	if (env->update_uarch)
+		mlt_update_uarch_raw(env, raw_tbl, num_of_raw,
+				contrib, remain, remain_t, now, prd_cnt);
+
+	idle_prd_cnt = _mlt_update_uarch(env, contrib, remain,
+					num_of_raw, num_of_uarch, prd_cnt);
+
+	if (env->is_task) {
+		prd_cnt = prd_cnt - idle_prd_cnt;
+		env->part->active_period = part_move_period(env->part->active_period, prd_cnt);
+	}
+}
+
+
+#define SUSTAIN_HIGH_THRES 200	/* 200ms */
+#define SUSTAIN_HIGH_STEP_UP 4	/* 4ms window */
+#define SUSTAIN_HIGH_STEP_DOWN 1
+
+void account_sustain_high_task(struct task_struct *p)
+{
+	struct ems_task_struct *ets = (struct ems_task_struct *)android_task_vendor_data(p);
+	bool is_prev_sustain_high = ets->sustain_high;
+	unsigned long util = 0;
+	unsigned long sustain_high_cap = 0;
+
+	if (ets->sustain_high_hist >= SUSTAIN_HIGH_THRES &&
+		cpuctl_task_group_idx(p) == CGROUP_TOPAPP) {
+		ets->sustain_high = true;
+	} else if (is_prev_sustain_high) {
+		ets->sustain_high = false;
+	}
+
+	if (task_on_rq_queued(p) && !p->se.sched_delayed) {
+		if (is_prev_sustain_high && !ets->sustain_high) {
+			struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, task_cpu(p))->runnable;
+
+			ems_rq_nr_sustain_high(task_rq(p))--;
+			runnable->nr_sustain_high -= 1;
+			BUG_ON(runnable->nr_sustain_high < 0);
+
+		} else if (!is_prev_sustain_high && ets->sustain_high) {
+			struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, task_cpu(p))->runnable;
+
+			ems_rq_nr_sustain_high(task_rq(p))++;
+			runnable->nr_sustain_high += 1;
+		}
+	}
+
+	util = ml_task_util_est_wo_boost(p);
+	sustain_high_cap = ems_get_enforced_adaptive_capacity(cpumask_first(cpu_fastest_mask()));
+	sustain_high_cap = sustain_high_cap - (sustain_high_cap >> 3);
+
+	if (util >= sustain_high_cap) {
+		if (ets->sustain_high_hist > U8_MAX - SUSTAIN_HIGH_STEP_UP)
+			ets->sustain_high_hist = U8_MAX;
+		else
+			ets->sustain_high_hist += SUSTAIN_HIGH_STEP_UP;
+
+		trace_profile_sustain_high(p, util, sustain_high_cap, ets->sustain_high_hist);
+	} else if (ets->sustain_high_hist) {
+		ets->sustain_high_hist -= SUSTAIN_HIGH_STEP_DOWN;
+		trace_profile_sustain_high(p, util, sustain_high_cap, ets->sustain_high_hist);
+	}
+}
+
+/******************************************************************************
+ *                             Multi load tracking                            *
+ ******************************************************************************/
+static inline int part_move_period(int period, int count)
+{
+	return (period + count + MLT_PERIOD_COUNT) % MLT_PERIOD_COUNT;
+}
+
+static void update_part_periods(struct mlt_part *part,
+			int cur_period, int count, int value)
+{
+	while (count--) {
+		cur_period = part_move_period(cur_period, 1);
+		if (part->state == ACTIVE)
+			part->periods[cur_period] = value;
+		else
+			part->periods[cur_period] = 0;
+	}
+}
+
+static void part_recent_elapsed(struct mlt_part *part, int cur_period)
+{
+	part->periods[cur_period] = part->recent;
+	part->contrib = 0;
+	part->recent = 0;
+}
+
+static void update_part_recent(struct mlt_part *part,
+				u64 contrib, u64 period_size)
+{
+	if (part->state == INACTIVE)
+		return;
+
+	part->contrib += contrib;
+	part->recent= div64_u64(
+		part->contrib << SCHED_CAPACITY_SHIFT, period_size);
+}
+
+static void __update_part(struct mlt_part *part,
+			int period, int period_count, u64 contrib,
+			u64 remain, u64 period_size, u64 period_value)
 {
 	/*
 	 * [before]
@@ -349,209 +738,519 @@ static void __mlt_update(enum track_type type, struct mlt *mlt,
 	 */
 
 	/* (1) update recent period */
-	mlt_update_recent(type, mlt, contrib, period_size);
+	update_part_recent(part, contrib, period_size);
 
 	if (period_count) {
 		int count = period_count;
 
 		/* (2) store recent period to period history */
-		period = mlt_move_period(period, 1);
-		mlt_recent_elapsed(type, mlt, period);
+		period = part_move_period(period, 1);
+		part_recent_elapsed(part, period);
 		count--;
 
 		/* (3) update fully elapsed period */
 		count = min(count, MLT_PERIOD_COUNT);
-		mlt_update_periods(type, mlt, period, count, period_value);
+		update_part_periods(part, period, count, period_value);
 
 		/* (4) store remain time to recent period */
-		mlt_update_recent(type, mlt, remain, period_size);
+		update_part_recent(part, remain, period_size);
+
+		if (part->task && get_sched_class(part->task) == EMS_SCHED_FAIR)
+			account_sustain_high_task(part->task);
 	}
 }
 
-static void mlt_update_uarch(struct mlt *mlt, int period,
-				int period_count, u64 contrib, u64 remain)
-{
-	struct uarch_data *ud = mlt->uarch;
-	u64 core_cycle, inst_ret, mem_stall;
-	u64 cc_delta, ir_delta, ms_delta, ipc = 0, mspc = 0;
-	u64 total_time;
-	int state = mlt->state;
-
-	if (state < 0)
-		return;
-
-	core_cycle = amu_core_cycles();
-	inst_ret = amu_inst_ret();
-	mem_stall = amu_mem_stall();
-
-	cc_delta = core_cycle - ud->last_cycle;
-	ir_delta = inst_ret - ud->last_inst_ret;
-	ms_delta = mem_stall - ud->last_mem_stall;
-
-	if (likely(cc_delta)) {
-		ipc = div64_u64(ir_delta << SCHED_CAPACITY_SHIFT, cc_delta);
-		mspc = div64_u64(ms_delta << SCHED_CAPACITY_SHIFT, cc_delta);
-	}
-
-	total_time = contrib + period_count * MLT_PERIOD_SIZE + remain;
-
-	ud->cycle_sum[state] += mlt_contrib(cc_delta,
-						contrib, total_time);
-
-	__mlt_update(TRACK_IPC, mlt, period, period_count,
-			mlt_contrib(ir_delta, contrib, total_time),
-			mlt_contrib(ir_delta, remain, total_time),
-			ud->cycle_sum[state], ipc);
-
-	__mlt_update(TRACK_MSPC, mlt, period, period_count,
-			mlt_contrib(ms_delta, contrib, total_time),
-			mlt_contrib(ms_delta, remain, total_time),
-			ud->cycle_sum[state], mspc);
-
-	if (period_count) {
-		memset(ud->cycle_sum, 0, sizeof(u64) * mlt->state_count);
-		ud->cycle_sum[state] = mlt_contrib(cc_delta,
-							remain, total_time);
-	}
-
-	ud->last_cycle = core_cycle;
-	ud->last_inst_ret = inst_ret;
-	ud->last_mem_stall = mem_stall;
-}
-
-static void mlt_update(struct mlt *mlt, u64 now)
+static void mlt_update(struct mlt_env *env, u64 now)
 {
 	u64 contrib = 0, remain = 0;
 	int period_count = 0;
+	struct mlt_part *part = env->part;
 
-	if (likely(now > mlt->last_updated)) {
-		contrib = min(now, mlt->period_start + MLT_PERIOD_SIZE);
-		contrib -= mlt->last_updated;
+	/* to sync-up period_start with sched tick */
+	if (unlikely(part->period_start == ULLONG_MAX)) {
+		if (env->tick)
+			part->period_start = now - MLT_PERIOD_SIZE;
+		else
+			return;
 	}
 
-	if (likely(now > mlt->period_start)) {
-		period_count = div64_u64_rem(now - mlt->period_start,
-				MLT_PERIOD_SIZE, &remain);
+	if (likely(now > part->last_updated)) {
+		contrib = min(now, part->period_start + MLT_PERIOD_SIZE);
+		contrib -= part->last_updated;
 	}
 
-	__mlt_update(TRACK_TIME, mlt, mlt->cur_period, period_count,
+	if (likely(now > part->period_start)) {
+		period_count = div64_u64_rem(now - part->period_start,
+					MLT_PERIOD_SIZE, &remain);
+
+		/*
+		 * forcely update period_count when sched tick occured
+		 * and remain is greater than 3.75ms
+		 */
+		if (env->tick && remain > MLT_PERIOD_SIZE_MIN) {
+			period_count++;
+			remain = 0;
+		}
+	}
+
+	__update_part(part, part->cur_period, period_count,
 			contrib, remain, MLT_PERIOD_SIZE,
 			SCHED_CAPACITY_SCALE);
 
-	if (mlt->uarch)
-		mlt_update_uarch(mlt, mlt->cur_period,
-				period_count, contrib, remain);
+	if (uarch_supported)
+		mlt_update_uarch(env, now, remain, period_count);
 
-	mlt->cur_period = mlt_move_period(mlt->cur_period, period_count);
-	mlt->period_start += MLT_PERIOD_SIZE * period_count;
-	mlt->last_updated = now;
+	part->cur_period = part_move_period(part->cur_period, period_count);
+	part->period_start += MLT_PERIOD_SIZE * period_count;
+	part->last_updated = now;
+
+	if (env->next_state != MLT_STATE_NOCHANGE)
+		env->part->state = env->next_state;
 }
 
-#define INACTIVE	(-1)
-static inline void mlt_set_state(struct mlt *mlt, int state)
+#define HIGH_UTIL_THRESHOLD (80)
+#define CONSTANT_ON_THRESHOLD_NS (300000000)
+#define CONSTANT_OFF_THRESHOLD_NS (8000000)
+static bool mlt_update_constant_load(u64 now)
 {
-	if (state == MLT_STATE_NOCHANGE)
-		return;
+	int cpu = cpumask_first(cpu_fastest_mask()), highest_cpu = -1;
+	struct mlt_cpu *mlt_cpu = per_cpu_ptr(pcpu_mlt, cpu);
+	struct mlt_cluster *mcl = &mlt_clusters[mlt_cpu->cluster];
+	unsigned long target_cap = 0, highest_util = 0;
+	bool constant_load = false;
+	bool high_load = false;
 
-	mlt->state = state;
-}
+	target_cap = ems_get_enforced_adaptive_capacity(cpu);
 
-static void mlt_update_cstate(int cpu, int next_cstate, u64 now)
-{
-	struct mlt *mlt = per_cpu_ptr(pcpu_mlt_cs, cpu);
+	for_each_cpu (cpu, cpu_fastest_mask()) {
+		unsigned long util = ml_cpu_util(cpu);
 
-	mlt_update(mlt, now);
-	trace_mlt_update_cstate(mlt);
+		if (util > highest_util) {
+			highest_cpu = cpu;
+			highest_util = util;
+		}
 
-	mlt_set_state(mlt, next_cstate);
-}
+		/*
+		 * Cpu util is compared with big capacity.
+		 * The percentage of big capacity is defined by HIGH_UTIL_THRESHOLD.
+		 *
+		 * If high cpu util is maintained over CONSTANT_ON_THRESHOLD_NS,
+		 * constant load will be enabled.
+		 */
+		if (util >= mult_frac(target_cap, HIGH_UTIL_THRESHOLD, 100)) {
+			high_load = true;
+			if (!mcl->constant_high_util_ns)
+				mcl->constant_high_util_ns = now;
 
-static void mlt_update_cpu(int cpu, int next_cgroup, u64 now)
-{
-	struct mlt *mlt = per_cpu_ptr(pcpu_mlt, cpu);
-
-	mlt_update(mlt, now);
-
-	trace_mlt_update_cpu(mlt);
-	if (mlt->uarch) {
-		trace_mlt_update_cpu_ipc(mlt);
-		trace_mlt_update_cpu_mspc(mlt);
+			/* constant load enable */
+			if (now - mcl->constant_high_util_ns > CONSTANT_ON_THRESHOLD_NS) {
+				constant_load = true;
+				mcl->constant_low_util_ns = 0;
+				break;
+			}
+		}
 	}
 
-	mlt_set_state(mlt, next_cgroup);
+	if (!high_load) {
+		if (mlt_constant_load) {
+			if (!mcl->constant_low_util_ns)
+				mcl->constant_low_util_ns = now;
+
+			/* constant load disable */
+			if (now - mcl->constant_low_util_ns >= CONSTANT_OFF_THRESHOLD_NS) {
+				constant_load = false;
+				mcl->constant_high_util_ns = 0;
+			} else {
+				/*
+				 * constant load should be maintained
+				 * for CONSTANT_OFF_THRESHOLD_NS
+				 */
+				constant_load = true;
+			}
+
+		} else {
+			mcl->constant_high_util_ns = 0;
+			mcl->constant_low_util_ns = 0;
+		}
+	}
+
+	trace_mlt_update_constant_load(cpu, target_cap, highest_cpu, highest_util,
+		mlt_constant_load, constant_load);
+
+	return constant_load;
 }
 
-#define task_mlt(p)	(struct mlt *)(&TASK_AVD1_6(p))
-
-void mlt_update_task(struct task_struct *p, int next_state, u64 now)
+/******************************************************************************
+ *                           MULTI LOAD for RUNNABLE			      *
+ ******************************************************************************/
+void mlt_update_runnable_ctrb(struct rq *rq)
 {
-	struct mlt *mlt = task_mlt(p);
-	int state = next_state ? 0 : INACTIVE;
+	int cpu = cpu_of(rq), nr_running, nr_topapp, nr_misfit, nr_sustain_high;
+	struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, cpu)->runnable;
+	u64 delta, now = sched_clock();
 
-	if (unlikely(!mlt->state_count))
+	if (unlikely(now < runnable->last_updated))
 		return;
 
-	mlt_update(mlt, now);
-	trace_mlt_update_task(p, mlt);
+	delta = now - runnable->last_updated;
 
-	mlt_set_state(mlt, state);
+	nr_running = runnable->nr_run = rq->nr_running;
+	nr_topapp = runnable->nr_topapp;
+	nr_misfit = ems_rq_nr_misfited(rq);
+	nr_sustain_high = runnable->nr_sustain_high;
+
+	runnable->runnable_contrib += (nr_running * delta);
+	runnable->topapp_runnable_contrib += (nr_topapp * delta);
+	runnable->misfit_runnable_contrib += (nr_misfit * delta);
+	runnable->sustain_high_runnable_contrib += (nr_sustain_high * delta);
+
+	runnable->contrib += delta;
+	runnable->last_updated = now;
+
+	trace_mlt_runnable_ctrb_update(cpu, runnable);
 }
 
-void mlt_idle_enter(int cpu, int cstate)
+static void mlt_update_runnable(struct rq *rq)
 {
-	mlt_update_cstate(cpu, cstate, sched_clock());
+	int cpu = cpu_of(rq);
+	struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, cpu)->runnable;
+
+	mlt_update_runnable_ctrb(rq);
+
+	runnable->runnable = div64_u64(runnable->runnable_contrib * MLT_RUNNABLE_UNIT,
+					runnable->contrib);
+	runnable->topapp_runnable = div64_u64(runnable->topapp_runnable_contrib * MLT_RUNNABLE_UNIT,
+					runnable->contrib);
+	runnable->misfit_runnable = div64_u64(runnable->misfit_runnable_contrib * MLT_RUNNABLE_UNIT,
+					runnable->contrib);
+	runnable->sustain_high_runnable = (runnable->sustain_high_runnable_contrib * MLT_RUNNABLE_UNIT)
+							/ runnable->contrib;
+
+	runnable->runnable_contrib = 0;
+	runnable->topapp_runnable_contrib = 0;
+	runnable->misfit_runnable_contrib = 0;
+	runnable->sustain_high_runnable_contrib = 0;
+	runnable->contrib = 0;
+
+	trace_mlt_runnable_update(cpu, runnable);
 }
 
-void mlt_idle_exit(int cpu)
+int mlt_runnable(int cpu)
 {
-	mlt_update_cstate(cpu, INACTIVE, sched_clock());
+	struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, cpu)->runnable;
+	return runnable->runnable;
 }
 
-static void mlt_update_nr_run(struct rq *rq);
-void mlt_tick(struct rq *rq)
+int mlt_topapp_runnable(int cpu)
+{
+	struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, cpu)->runnable;
+	return runnable->topapp_runnable;
+}
+
+int mlt_misfit_runnable(int cpu)
+{
+	struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, cpu)->runnable;
+	return runnable->misfit_runnable;
+}
+
+int mlt_sustain_high_runnable(int cpu)
+{
+	struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, cpu)->runnable;
+	return runnable->sustain_high_runnable;
+}
+
+/******************************************************************************
+ *                           MULTI LOAD for EXTERN API's		      *
+ ******************************************************************************/
+#define MLT_VALID_PERIOD(x)	((x) > -1 && (x) < MLT_PERIOD_COUNT)
+#define MLT_VALID_STATE(x)	((x) > -1 && (x) < CSTATE_MAX)
+#define MLT_VALID_LENGTH(x)	MLT_VALID_PERIOD((x - 1))
+/* return task's average ratio of given length from cur_period */
+int __mlt_avg_value(struct mlt_part *part, int length)
+{
+	int oldest_idx, idx = part->cur_period, value = 0;
+	int cnt, corrected_idx = 0;
+
+	if (unlikely(!MLT_VALID_LENGTH(length)))
+		return 0;
+
+	/*
+	 * Recent correction
+	 * If recent value is higher then oldest window value,
+	 * replace small value window with recent velue to incerease performance
+	 */
+	oldest_idx = mlt_period_with_delta(idx, -(length - 1));
+	if (part->periods[oldest_idx] < part->recent) {
+		corrected_idx = 1;
+		value = part->recent;
+	}
+
+	for (cnt = 0; cnt < (length - corrected_idx); cnt++) {
+		value += part->periods[idx];
+		idx = mlt_period_with_delta(idx, -1);
+	}
+
+	return value / length;
+}
+
+u64 __mlt_get_target_period_value(struct mlt_part *part, int target_period)
+{
+	if (unlikely(!MLT_VALID_PERIOD(target_period)))
+		return 0;
+
+	return part->periods[target_period];
+}
+
+u64 __mlt_get_value(struct mlt_part *part, int arg, enum mlt_value_type type)
+{
+	switch (type) {
+	case PERIOD:
+		return __mlt_get_target_period_value(part, arg);
+	case AVERAGE:
+		return __mlt_avg_value(part, arg);
+	}
+	return 0;
+}
+
+/* return task's ratio of target_period */
+u64 mlt_task_value(struct task_struct *p, int arg, enum mlt_value_type type)
+{
+	struct mlt_part *part = &task_mlt(p)->part;
+
+	if (unlikely(!part))
+		return 0;
+
+	return __mlt_get_value(part, arg, type);
+}
+
+/* return cpu's ratio of target_period */
+u64 mlt_cpu_value(int cpu, int arg, enum mlt_value_type type, int state)
+{
+	struct mlt_part *part;
+
+	part = &per_cpu_ptr(pcpu_mlt, cpu)->part;
+
+	if (unlikely(!part))
+		return 0;
+
+	return __mlt_get_value(part, arg, type);
+}
+
+u32 mlt_tsk_uarch(struct task_struct *tsk, enum mlt_uarch_tsk type, int size)
+{
+	struct mlt_part *part = &task_mlt(tsk)->part;
+	struct mlt_uarch *uarch;
+	int c, p, cur_period;
+	u32 div = 0, sum = 0;
+
+	if (!uarch_supported)
+		return 0;
+
+	if (unlikely(!part))
+		return 0;
+
+	if (unlikely(type > MLT_UARCH_TSK_NUM))
+		return 0;
+
+	if (unlikely(size < 0 || size > MLT_PERIOD_COUNT))
+		return 0;
+
+	uarch = &task_mlt(tsk)->uarch[type];
+	if (!size)
+		return uarch->recent;
+
+	cur_period = part->active_period;
+	for (c = 0; c < size; c++) {
+		p = part_move_period(cur_period, -c);
+
+		if (uarch->periods[p]) {
+			sum += uarch->periods[p];
+			div++;
+		}
+	}
+
+	if (div)
+		return sum / div;
+	else
+		return uarch->recent;
+}
+
+u32 mlt_cpu_uarch(int cpu, enum mlt_uarch_cpu type, int size)
+{
+	struct mlt_part *part = &per_cpu_ptr(pcpu_mlt, cpu)->part;
+	struct mlt_uarch *uarch;
+	int c, p, cur_period;
+	s32 sum = 0;
+
+	if (!uarch_supported)
+		return 0;
+
+	if (unlikely(!part))
+		return 0;
+
+	if (unlikely(type > MLT_UARCH_CPU_NUM))
+		return 0;
+
+	if (unlikely(size < 0 || size > MLT_PERIOD_COUNT))
+		return 0;
+
+	uarch = &per_cpu_ptr(pcpu_mlt, cpu)->uarch[type];
+	if (!size)
+		return uarch->recent;
+
+	cur_period = part->cur_period;
+	for (c = 0; c < size; c++) {
+		p = part_move_period(cur_period, -c);
+		sum += uarch->periods[p];
+	}
+
+	return sum / size;
+}
+
+static bool mlt_check_topapp_task(struct task_struct *p)
+{
+	if (get_sched_class(p) != EMS_SCHED_FAIR)
+		return false;
+
+	return cpuctl_task_group_idx(p) == CGROUP_TOPAPP;
+}
+
+/* It will be called after increase nr_run */
+void mlt_enqueue_task(struct rq *rq, struct task_struct *p)
+{
+	struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, cpu_of(rq))->runnable;
+
+	mlt_update_runnable_ctrb(rq);
+
+	if (mlt_check_topapp_task(p)) {
+		ems_topapp_task(p) = 1;
+		runnable->nr_topapp += 1;
+	} else
+		ems_topapp_task(p) = 0;
+
+	if (get_sched_class(p) == EMS_SCHED_FAIR) {
+		if (ems_sustain_high(p)) {
+			ems_rq_nr_sustain_high(rq)++;
+			runnable->nr_sustain_high += 1;
+		}
+	}
+}
+
+/* It will be called before decrease nr_run */
+void mlt_dequeue_task(struct rq *rq, struct task_struct *p)
+{
+	struct mlt_runnable *runnable = &per_cpu_ptr(pcpu_mlt, cpu_of(rq))->runnable;
+
+	mlt_update_runnable_ctrb(rq);
+
+	if (ems_topapp_task(p))
+		runnable->nr_topapp -= 1;
+
+	BUG_ON(runnable->nr_topapp < 0);
+
+	if (get_sched_class(p) == EMS_SCHED_FAIR) {
+		if (ems_sustain_high(p)) {
+			ems_rq_nr_sustain_high(rq)--;
+			runnable->nr_sustain_high -= 1;
+			BUG_ON(runnable->nr_sustain_high < 0);
+		}
+	}
+}
+
+void mlt_update_cpu(int cpu, int next_state, u64 now,
+				bool update_uarch, bool tick)
+{
+	struct mlt_env env = {
+		.part = &per_cpu_ptr(pcpu_mlt, cpu)->part,
+		.uarch = per_cpu_ptr(pcpu_mlt, cpu)->uarch,
+		.raw = per_cpu_ptr(pcpu_mlt, cpu)->uarch_raw,
+		.next_state = next_state,
+		.update_uarch = update_uarch,
+		.is_task = false,
+		.tick = tick,
+	};
+
+	mlt_update(&env, now);
+	trace_mlt_update_cpu_part(cpu, env.part);
+
+	if (uarch_supported)
+		trace_mlt_update_cpu_uarch(cpu, env.part, env.uarch);
+}
+
+void mlt_update_task(struct task_struct *p, int next_state, u64 now,
+					bool update_uarch, bool tick)
+{
+	struct mlt_env env = {
+		.part = &task_mlt(p)->part,
+		.uarch = task_mlt(p)->uarch,
+		.raw = task_mlt(p)->uarch_raw,
+		.next_state = next_state,
+		.update_uarch = update_uarch,
+		.is_task = true,
+		.tick = tick,
+	};
+
+	mlt_update(&env, now);
+	trace_mlt_update_task_part(p, env.part);
+
+	if (uarch_supported)
+		trace_mlt_update_tsk_uarch(p, env.part, env.uarch);
+}
+
+void mlt_tick(void)
 {
 	u64 now = sched_clock();
+	int cpu;
 
-	mlt_update_nr_run(rq);
+	for_each_cpu(cpu, cpu_active_mask) {
+		struct rq *rq = cpu_rq(cpu);
+		struct rq_flags rf;
 
-	mlt_update_cpu(cpu_of(rq), MLT_STATE_NOCHANGE, now);
+		rq_lock_irqsave(rq, &rf);
 
-	if (get_sched_class(rq->curr) != EMS_SCHED_IDLE)
-		mlt_update_task(rq->curr, MLT_STATE_NOCHANGE, now);
+		mlt_update_runnable(rq);
+
+		if (rq->nohz_tick_stopped)
+			mlt_update_cpu(cpu, MLT_STATE_NOCHANGE, now, false, true);
+
+		rq_unlock_irqrestore(rq, &rf);
+	}
+
+	mlt_constant_load = mlt_update_constant_load(now);
 }
 
 void mlt_task_switch(int cpu, struct task_struct *prev,
 				struct task_struct *next)
 {
+	struct rq *rq = cpu_rq(cpu);
 	u64 now = sched_clock();
-	int cgroup;
 
-	if (get_sched_class(next) == EMS_SCHED_IDLE)
-		cgroup = INACTIVE;
-	else
-		cgroup = cpuctl_task_group_idx(next);
+	if (!is_idle_task(prev))
+		mlt_update_task(prev, INACTIVE, now, true, false);
 
-	mlt_update_cpu(cpu, cgroup, now);
+	if (!is_idle_task(next))
+		mlt_update_task(next, ACTIVE, now, true, false);
 
-	mlt_update_task(prev, 0, now);
-	mlt_update_task(next, 1, now);
-}
+	/* cpu wake up from idle */
+	if (is_idle_task(prev))
+		mlt_update_cpu(cpu, ACTIVE, now, true, false);
 
-void mlt_task_migration(struct task_struct *p, int new_cpu)
-{
-	struct mlt *mlt = task_mlt(p);
+	/* cpu go to idle */
+	else if (is_idle_task(next))
+		mlt_update_cpu(cpu, INACTIVE, now, true, false);
 
-	if (unlikely(!mlt->state_count))
-		return;
-
-	mlt->cpu = new_cpu;
+	if (prev != next) {
+		mlt_update_load(rq, prev, now, PUT_PREV_TASK);
+		mlt_update_load(rq, next, now, PICK_NEXT_TASK);
+	} else
+		mlt_update_load(rq, prev, now, UPDATE_TASK);
 }
 
 int mlt_cur_period(int cpu)
 {
-	struct mlt *mlt = per_cpu_ptr(pcpu_mlt, cpu);
+	struct mlt_part *part = &(per_cpu_ptr(pcpu_mlt, cpu)->part);
 
-	return mlt->cur_period;
+	return part->cur_period;
 }
 
 int mlt_prev_period(int period)
@@ -578,443 +1277,384 @@ int mlt_period_with_delta(int idx, int delta)
 /* return task's ratio of current period */
 int mlt_task_cur_period(struct task_struct *p)
 {
-	struct mlt *mlt = task_mlt(p);
-	return mlt->cur_period;
+	struct mlt_part *part = &task_mlt(p)->part;
+	return part->cur_period;
 }
 
-int __mlt_get_recent(struct mlt *mlt)
-{
-	int i, value = 0;
-
-	for (i = 0; i < mlt->state_count; i++)
-		value += mlt->recent[i];
-	return value;
-}
-
-int __mlt_get_value(struct mlt *mlt, int target_period)
-{
-	int i, value = 0;
-
-	for (i = 0; i < mlt->state_count; i++)
-		value += mlt->periods[i][target_period];
-
-	return value;
-}
-
-/* return task's ratio of target_period */
-int mlt_task_value(struct task_struct *p, int target_period)
-{
-	struct mlt *mlt = task_mlt(p);
-	return __mlt_get_value(mlt, target_period);
-}
-
-int mlt_task_recent(struct task_struct *p)
-{
-	struct mlt *mlt = task_mlt(p);
-	return __mlt_get_recent(mlt);
-}
-
-/* return task's average ratio of all periods */
-int mlt_task_avg(struct task_struct *p)
-{
-	int i, value = 0;
-
-	for (i = 0; i < MLT_PERIOD_COUNT; i++)
-		value += mlt_task_value(p, i);
-
-	return (value * SCHED_CAPACITY_SCALE) / MLT_PERIOD_SUM;
-}
-
-int mlt_art_value(int cpu, int target_period)
-{
-	struct mlt *mlt = per_cpu_ptr(pcpu_mlt, cpu);
-	return __mlt_get_value(mlt, target_period);
-}
-
-int mlt_art_recent(int cpu)
-{
-	struct mlt *mlt = per_cpu_ptr(pcpu_mlt, cpu);
-	return __mlt_get_recent(mlt);
-}
-
-int mlt_art_last_value(int cpu)
-{
-	return mlt_art_value(cpu, per_cpu_ptr(pcpu_mlt, cpu)->cur_period);
-}
-
-u64 mlt_art_last_update_time(int cpu)
-{
-	struct mlt *mlt = per_cpu_ptr(pcpu_mlt, cpu);
-	return mlt->last_updated;
-}
-
-int mlt_art_cgroup_value(int cpu, int target_period, int cgroup)
-{
-	struct mlt *mlt = per_cpu_ptr(pcpu_mlt, cpu);
-
-	return mlt->periods[cgroup][target_period];
-}
-
-int mlt_cst_value(int cpu, int target_period, int cstate)
-{
-	struct mlt *mlt = per_cpu_ptr(pcpu_mlt_cs, cpu);
-
-	return mlt->periods[cstate][target_period];
-}
-
-static char *cg_name[] = {
-	"root",
-	"fg",
-	"bg",
-	"ta",
-	"rt",
-	"sy",
-	"syb",
-	"n-h",
-	"c-d",
-};
-
-/******************************************************************************
- *                           MULTI LOAD for NR_RUNNING			      *
- ******************************************************************************/
-#define NR_RUN_PERIOD		(4 * NSEC_PER_MSEC)
-
-static struct mlt_nr_run __percpu *mlt_nr_run;		/* nr_run tracking */
-
-int mlt_avg_nr_run(struct rq *rq)
-{
-	int cpu = cpu_of(rq);
-	struct mlt_nr_run *mnr = per_cpu_ptr(mlt_nr_run, cpu);
-	u64 now = sched_clock();
-
-	if ((mnr->last_ctrb_updated + MLT_IDLE_THR_TIME) < now)
-		return 0;
-
-	return mnr->avg_nr_run;
-}
-
-static void mlt_update_nr_run_ctrb(struct rq *rq)
-{
-	int cpu = cpu_of(rq);
-	struct mlt_nr_run *mnr = per_cpu_ptr(mlt_nr_run, cpu);
-	int nr_run = rq->nr_running * NR_RUN_UNIT;
-	u64 now = sched_clock();
-	s64 delta;
-
-	if (unlikely(now < mnr->last_ctrb_updated))
-		return;
-
-	delta = now - mnr->last_ctrb_updated;
-
-	mnr->nr_run_ctrb += (nr_run * delta);
-	mnr->accomulate_time += delta;
-	mnr->last_ctrb_updated = now;
-}
-
-static void mlt_update_nr_run(struct rq *rq)
-{
-	int cpu = cpu_of(rq);
-	struct mlt_nr_run *mnr = per_cpu_ptr(mlt_nr_run, cpu);
-
-	mlt_update_nr_run_ctrb(rq);
-
-	mnr->avg_nr_run = mnr->nr_run_ctrb / mnr->accomulate_time;
-
-	trace_mlt_nr_run_update(cpu, mnr->accomulate_time, mnr->nr_run_ctrb,
-				rq->nr_running, mnr->avg_nr_run);
-
-	mnr->nr_run_ctrb = 0;
-	mnr->accomulate_time = 0;
-}
-
-/* It will be called before increase nr_run */
-void mlt_enqueue_task(struct rq *rq)
-{
-	mlt_update_nr_run_ctrb(rq);
-}
-
-/* It will be called before decrease nr_run */
-void mlt_dequeue_task(struct rq *rq)
-{
-	mlt_update_nr_run_ctrb(rq);
-}
-
-int init_mlt_nr_run(void)
-{
-	int cpu;
-
-	mlt_nr_run = alloc_percpu(struct mlt_nr_run);
-	if (!mlt_nr_run) {
-		pr_err("failed to allocate mlt_nr_run\n");
-		return -ENOMEM;
-	}
-
-	for_each_possible_cpu(cpu) {
-		struct mlt_nr_run *mnr = per_cpu_ptr(mlt_nr_run, cpu);
-		raw_spin_lock_init(&mnr->lock);
-	}
-
-	return 0;
-}
-
-#define MSG_SIZE 9216
+#define MSG_SIZE (1024 * VENDOR_NR_CPUS)
+static char *sysfs_msg;
 static ssize_t multi_load_read(struct file *file, struct kobject *kobj,
 		struct bin_attribute *attr, char *buf,
 		loff_t offset, size_t size)
 {
-	char *msg = kcalloc(MSG_SIZE, sizeof(char), GFP_KERNEL);
 	ssize_t msg_size, count = 0;
 	int cpu;
 
 	for_each_possible_cpu(cpu) {
-		struct mlt *mlt = per_cpu_ptr(pcpu_mlt, cpu);
-		int group;
+		struct mlt_cpu *mlt_cpu = per_cpu_ptr(pcpu_mlt, cpu);
+		struct mlt_part *part = &mlt_cpu->part;
+		int idx, p, c, cur_period = part->cur_period;
 
-		count += sprintf(msg + count, "   CPU%d |   Recent |   Latest                     "
-				"                             Oldest\n", cpu);
-		count += sprintf(msg + count, "---------------------------------------------------"
-				"-----------------------------------\n");
+		count += sprintf(sysfs_msg + count, "CPU%d :   Recent  |   Latest\n", cpu);
+		count += sprintf(sysfs_msg + count, "time: %10d |", part->recent);
 
-		for (group = 0; group < mlt->state_count; group++) {
-			int p, c;
+		for (c = 0; c < MLT_PERIOD_COUNT; c++) {
+			p = part_move_period(cur_period, -c);
+			count += sprintf(sysfs_msg + count, "%10d", part->periods[p]);
+		}
 
-			if (group == mlt->state)
-				count += sprintf(msg + count, ">> ");
-			else
-				count += sprintf(msg + count, "   ");
-			count += sprintf(msg + count, "%4s | ",  cg_name[group]);
-
-			count += sprintf(msg + count, "%8d | ", mlt->recent[group]);
+		for (idx = 0; idx < MLT_UARCH_CPU_NUM; idx++) {
+			struct mlt_uarch *uarch = &per_cpu_ptr(pcpu_mlt, cpu)->uarch[idx];
+			count += sprintf(sysfs_msg + count, "\n%4s: %10u |",
+					cpu_uarch_name[idx], uarch->recent);
 
 			for (c = 0; c < MLT_PERIOD_COUNT; c++) {
-				p = mlt_move_period(mlt->cur_period, -c);
-				count += sprintf(msg + count, "%8d", mlt->periods[group][p]);
+				p = part_move_period(cur_period, -c);
+				count += sprintf(sysfs_msg + count, "%10u", uarch->periods[p]);
 			}
-			count += sprintf(msg + count, "\n");
 		}
-		count += sprintf(msg + count, "\n");
+		count += sprintf(sysfs_msg + count, "\n==================================================="
+				"===================================\n");
 	}
 
 	msg_size = min_t(ssize_t, count, MSG_SIZE);
-	msg_size = memory_read_from_buffer(buf, size, &offset, msg, msg_size);
-
-	kfree(msg);
+	msg_size = memory_read_from_buffer(buf, size, &offset, sysfs_msg, msg_size);
 
 	return msg_size;
 }
 BIN_ATTR_RO(multi_load, 0);
 
-static int mlt_uarch_data_free(struct uarch_data *ud, int state_count)
+static void mlt_init_tsk_uarch(struct mlt_uarch_raw *raw, struct mlt_uarch *uarch)
+{
+	memset(raw, 0, sizeof(struct mlt_uarch_raw) * MLT_RAW_TSK_NUM);
+	memset(uarch, 0, sizeof(struct mlt_uarch) * MLT_UARCH_TSK_NUM);
+}
+
+static void mlt_init_runnable(struct mlt_runnable *runnable, u64 now)
+{
+	runnable->nr_topapp = 0;
+	runnable->nr_sustain_high = 0;
+	runnable->last_updated = now;
+}
+
+static void mlt_init_part_load(struct mlt_part *part)
 {
 	int i;
 
-	if (ud->ipc_periods)
-		for (i = 0; i < state_count; i++)
-			kfree(ud->ipc_periods[i]);
-	if (ud->mspc_periods)
-		for (i = 0; i < state_count; i++)
-			kfree(ud->mspc_periods[i]);
-	kfree(ud->ipc_periods);
-	kfree(ud->mspc_periods);
-	kfree(ud->ipc_recent);
-	kfree(ud->mspc_recent);
-	kfree(ud->cycle_sum);
-	kfree(ud->inst_ret_sum);
-	kfree(ud->mem_stall_sum);
-	kfree(ud);
+	for (i = 0; i < MLT_LOAD_PERIOD_COUNT; i++)
+		part->load_history[i] = 0;
+	part->hist_idx = 0;
 
-	return -ENOMEM;
+	part->load_recent = 0;
+	part->load_period_start = 0;
+
+	part->last_load_updated = 0;
 }
 
-static int mlt_uarch_data_init(struct mlt *mlt)
+static void mlt_init_part(struct mlt_part *part, int cur_period,
+				u64 period_start, u64 now)
 {
-	struct uarch_data *ud;
-	int i, state_count = mlt->state_count;
+	part->state = INACTIVE;
+	part->cur_period = cur_period;
+	part->active_period = cur_period;
+	part->period_start = period_start;
+	part->last_updated = now;
 
-	ud = kzalloc(sizeof(struct uarch_data), GFP_KERNEL);
-	if (!ud)
-		return -ENOMEM;
-
-	ud->ipc_periods = kcalloc(state_count, sizeof(int *), GFP_KERNEL);
-	if (!ud->ipc_periods)
-		return mlt_uarch_data_free(ud, state_count);
-
-	ud->mspc_periods = kcalloc(state_count, sizeof(int *), GFP_KERNEL);
-	if (!ud->mspc_periods)
-		return mlt_uarch_data_free(ud, state_count);
-
-	for (i = 0; i < state_count; i++) {
-		ud->ipc_periods[i] = kcalloc(MLT_PERIOD_COUNT, sizeof(int), GFP_KERNEL);
-		if (!ud->ipc_periods[i])
-			return mlt_uarch_data_free(ud, state_count);
-
-		ud->mspc_periods[i] = kcalloc(MLT_PERIOD_COUNT, sizeof(int), GFP_KERNEL);
-		if (!ud->mspc_periods[i])
-			return mlt_uarch_data_free(ud, state_count);
-	}
-
-	ud->ipc_recent = kcalloc(state_count, sizeof(u64), GFP_KERNEL);
-	if (!ud->ipc_recent)
-		return mlt_uarch_data_free(ud, state_count);
-
-	ud->mspc_recent = kcalloc(state_count, sizeof(u64), GFP_KERNEL);
-	if (!ud->mspc_recent)
-		return mlt_uarch_data_free(ud, state_count);
-
-	ud->cycle_sum = kcalloc(state_count, sizeof(u64), GFP_KERNEL);
-	if (!ud->cycle_sum)
-		return mlt_uarch_data_free(ud, state_count);
-
-	ud->inst_ret_sum = kcalloc(state_count, sizeof(u64), GFP_KERNEL);
-	if (!ud->inst_ret_sum)
-		return mlt_uarch_data_free(ud, state_count);
-
-	ud->mem_stall_sum = kcalloc(state_count, sizeof(u64), GFP_KERNEL);
-	if (!ud->mem_stall_sum)
-		return mlt_uarch_data_free(ud, state_count);
-
-	mlt->uarch = ud;
-
-	return 0;
+	mlt_init_part_load(part);
 }
 
-static int mlt_alloc_and_init(struct mlt *mlt, int cpu,
-				int state_count, u64 now, bool uarch)
+void mlt_init_task(struct task_struct *p)
 {
-	int i;
+	struct mlt_task *mlt_tsk= task_mlt(p);
+	struct mlt_part *part;
 
-	mlt->cpu = cpu;
-	mlt->cur_period = 0;
-	mlt->period_start = now;
-	mlt->last_updated = now;
-	mlt->state = -1;
-	mlt->state_count = state_count;
+	memset(mlt_tsk, 0, sizeof(struct mlt_task));
+	part = &(per_cpu_ptr(pcpu_mlt, task_cpu(p))->part);
 
-	mlt->periods = kcalloc(state_count, sizeof(int *), GFP_KERNEL);
-	if (!mlt->periods)
-		return -ENOMEM;
+	mlt_init_part(&mlt_tsk->part, part->cur_period,
+		part->period_start, part->last_updated);
 
-	for (i = 0; i < state_count; i++) {
-		mlt->periods[i] = kcalloc(MLT_PERIOD_COUNT,
-					sizeof(int), GFP_KERNEL);
-		if (!mlt->periods[i])
-			goto fail_alloc;
-	}
-
-	mlt->recent = kcalloc(state_count, sizeof(int), GFP_KERNEL);
-	if (!mlt->recent)
-		goto fail_alloc;
-
-	mlt->recent_sum = kcalloc(state_count, sizeof(u64), GFP_KERNEL);
-	if (!mlt->recent_sum)
-		goto fail_alloc;
-
-	if (uarch) {
-		if (mlt_uarch_data_init(mlt))
-			goto fail_alloc;
-	} else
-		mlt->uarch = NULL;
-
-	return 0;
-
-fail_alloc:
-	for (i = 0; i < state_count; i++)
-		kfree(mlt->periods[i]);
-	kfree(mlt->periods);
-	kfree(mlt->recent);
-	kfree(mlt->recent_sum);
-
-	return -ENOMEM;
+	if (uarch_supported)
+		mlt_init_tsk_uarch(mlt_tsk->uarch_raw, mlt_tsk->uarch);
 }
 
-static bool uarch_supported;
-void mlt_task_init(struct task_struct *p)
+static void mlt_init_cpu(struct mlt_cpu *mlt_cpu, int cpu, u64 now)
 {
-	struct mlt *mlt = task_mlt(p);
-	struct mlt *mlt_cpu;
-	int *pos = (int *)mlt;
+	mlt_cpu->cpu = cpu;
+	mlt_init_part(&mlt_cpu->part, 0, ULLONG_MAX, now);
+	mlt_init_runnable(&mlt_cpu->runnable, now);
 
-	memset(mlt, 0, MLT_TASK_SIZE);
-	mlt_cpu = per_cpu_ptr(pcpu_mlt, task_cpu(p));
+	mlt_cpu->runtime_scale = SCHED_CAPACITY_SCALE;
+}
 
-	mlt->cpu = mlt_cpu->cpu;
-	mlt->cur_period = mlt_cpu->cur_period;
-	mlt->period_start = mlt_cpu->period_start;
-	mlt->last_updated = mlt_cpu->last_updated;
-	mlt->state = -1;
-	mlt->state_count = 1;
+#define DIV64_U64_ROUNDUP(X, Y) div64_u64((X) + (Y - 1), Y)
+static void update_runtime_scale(struct rq *rq)
+{
+	int cpu = cpu_of(rq);
+	struct mlt_cpu *mlt_cpu = per_cpu_ptr(pcpu_mlt, cpu);
+	struct mlt_cluster *mcl;
 
-	pos += (sizeof(struct mlt) / sizeof(int));
-
-	mlt->periods			= (int **)pos;
-	mlt->periods[0]			= pos + 2;
-	mlt->recent			= pos + 2 + MLT_PERIOD_COUNT;
-	mlt->recent_sum			= (u64 *)(pos + 4 + MLT_PERIOD_COUNT);
-
-	if (!uarch_supported)
+	if (invalid_cluster_id(mlt_cpu->cluster))
 		return;
 
-	mlt->uarch			= (struct uarch_data *)(pos + 6 + MLT_PERIOD_COUNT);
+	mcl = &mlt_clusters[mlt_cpu->cluster];
 
-	pos = pos + 6 + MLT_PERIOD_COUNT;
-	pos += (sizeof(struct uarch_data) / sizeof(int));
+	mlt_cpu->runtime_scale = DIV64_U64_ROUNDUP(mcl->cur_freq *
+			ems_get_origin_cpu_capacity(cpu), mcl->max_freq_org);
+}
 
-	mlt->uarch->ipc_periods		= (int **)pos;
-	mlt->uarch->ipc_periods[0]	= pos + 2;
-	mlt->uarch->mspc_periods	= (int **)(pos + 2 + MLT_PERIOD_COUNT);
-	mlt->uarch->mspc_periods[0]	= pos + 4 + MLT_PERIOD_COUNT;
-	mlt->uarch->ipc_recent		= pos + 4 + (MLT_PERIOD_COUNT * 2);
-	mlt->uarch->mspc_recent		= pos + 6 + (MLT_PERIOD_COUNT * 2);
-	mlt->uarch->cycle_sum		= (u64 *)(pos + 8 + (MLT_PERIOD_COUNT * 2));
-	mlt->uarch->inst_ret_sum	= (u64 *)(pos + 10 + (MLT_PERIOD_COUNT * 2));
-	mlt->uarch->mem_stall_sum	= (u64 *)(pos + 12 + (MLT_PERIOD_COUNT * 2));
+static u64 scale_runtime(struct rq *rq, u64 delta)
+{
+	struct mlt_cpu *mlt_cpu = per_cpu_ptr(pcpu_mlt, cpu_of(rq));
+
+	delta = (delta * mlt_cpu->runtime_scale) >> SCHED_CAPACITY_SHIFT;
+
+	return delta;
+}
+
+static void update_load_recent(struct rq *rq, struct mlt_part *part, u64 delta_ns, int type)
+{
+	u64 scaled_delta;
+
+	if ((s64)delta_ns < 0)
+		delta_ns = 0;
+
+	scaled_delta = scale_runtime(rq, delta_ns);
+
+	part->load_recent += scaled_delta;
+	if (part->load_recent > MLT_LOAD_PERIOD_SIZE)
+		part->load_recent = MLT_LOAD_PERIOD_SIZE;
+
+	trace_mlt_update_load_recent(cpu_of(rq), scaled_delta, delta_ns,
+			div64_u64(part->load_recent, MLT_LOAD_DIVISOR), part->load_recent, type);
+}
+
+static void update_load_history(struct mlt_part *part, u64 recent, u64 nr_periods)
+{
+	int i;
+	u64 load;
+
+	if (nr_periods > MLT_LOAD_PERIOD_COUNT)
+		nr_periods = MLT_LOAD_PERIOD_COUNT;
+
+	load = div64_u64(recent, MLT_LOAD_DIVISOR);
+	for (i = 0; i < nr_periods; i++) {
+		part->load_history[part->hist_idx] = load;
+		part->hist_idx++;
+
+		if (part->hist_idx >= MLT_LOAD_PERIOD_COUNT)
+			part->hist_idx = 0;
+	}
+
+	part->load_recent = 0;
+}
+
+static bool need_update_load(struct rq *rq, struct mlt_part *part, int type, int flag)
+{
+	struct task_struct *p = part->task;
+
+	if (type == MLT_TASK_LOAD_UPDATE) {
+		if (get_sched_class(p) != EMS_SCHED_FAIR)
+			return false;
+
+		if (is_idle_task(p))
+			return false;
+
+		if (flag == UPDATE_TASK && !p->on_rq)
+			return false;
+	}
+
+	if (type == MLT_CPU_LOAD_UPDATE) {
+		/* we need to account sleep time */
+		if (flag == PUT_PREV_TASK && is_idle_task(p))
+			return true;
+
+		/* we don't need to update load under sleep */
+		if (is_idle_task(rq->curr))
+			return false;
+	}
+
+	return true;
+}
+
+static bool wakeup_after_sleep(struct mlt_part *part, int type, int flag)
+{
+	struct task_struct *p = part->task;
+
+	if (type == MLT_TASK_LOAD_UPDATE) {
+		if (flag == WAKEUP_TASK)
+			return true;
+	}
+
+	if (type == MLT_CPU_LOAD_UPDATE) {
+		if (flag == PUT_PREV_TASK && is_idle_task(p))
+			return true;
+	}
+
+	return false;
+}
+
+static void update_load(struct rq *rq, struct mlt_part *part, int type, u64 now, int flag)
+{
+	u64 last_updated = part->last_load_updated;
+	u64 period_start = part->load_period_start;
+	u64 period_end, nr_periods, delta_ns = 0;
+	bool running = false;
+
+	if (!need_update_load(rq, part, type, flag))
+		return;
+
+	running = !wakeup_after_sleep(part, type, flag);
+
+	delta_ns = now - period_start;
+	if ((s64)delta_ns < 0)
+		delta_ns = 0;
+
+	/* period is not fully elapsed */
+	if (delta_ns < MLT_LOAD_PERIOD_SIZE) {
+		if (running)
+			update_load_recent(rq, part, now - last_updated, type);
+		goto out;
+	}
+
+	/* 1) update first elapsed period */
+	period_end = period_start + MLT_LOAD_PERIOD_SIZE;
+	if (running)
+		update_load_recent(rq, part, period_end - last_updated, type);
+	update_load_history(part, part->load_recent, 1);
+
+	/* 2) update fully elapsed period */
+	period_start += MLT_LOAD_PERIOD_SIZE;
+	nr_periods = div64_u64(now - period_start, MLT_LOAD_PERIOD_SIZE);
+	if (nr_periods) {
+		u64 recent = 0;
+
+		if (running)
+			recent = scale_runtime(rq, MLT_LOAD_PERIOD_SIZE);
+
+		update_load_history(part, recent, nr_periods);
+	}
+
+	/* 3) update recent */
+	period_start += nr_periods * MLT_LOAD_PERIOD_SIZE;
+	if (running)
+		update_load_recent(rq, part, now - period_start, type);
+
+	part->load_period_start = period_start;
+out:
+	part->last_load_updated = now;
+
+	trace_mlt_update_load(cpu_of(rq), part->task, delta_ns, running, type,
+			mlt_load_flag_name[flag]);
+}
+
+void mlt_update_load(struct rq *rq, struct task_struct *p, u64 now, int flag)
+{
+	struct mlt_part *part = &task_mlt(p)->part;
+
+	part->task = p;
+	update_runtime_scale(rq);
+
+	if (!part->load_period_start)
+		part->load_period_start = now;
+
+	if (!part->last_load_updated)
+		part->last_load_updated = now;
+
+	/* update task load */
+	update_load(rq, part, MLT_TASK_LOAD_UPDATE, now, flag);
+	trace_mlt_update_task_load(cpu_of(rq), p, part, mlt_load_flag_name[flag]);
+}
+
+void mlt_cpufreq_transition_notifier(int domain_id, unsigned int next_freq)
+{
+	struct cpufreq_policy *policy;
+	struct mlt_cluster *mcl;
+	int cpu;
+	unsigned long flags;
+
+	if (unlikely(ems_disabled()))
+		return;
+
+	if (mlt_disabled)
+		return;
+
+	if (invalid_cluster_id(domain_id))
+		return;
+
+	mcl = &mlt_clusters[domain_id];
+	policy = cpufreq_cpu_get_raw(cpumask_first(&mcl->cpus));
+	if (!policy)
+		return;
+
+	if (mcl->cur_freq == next_freq)
+		return;
+
+	for_each_cpu(cpu, &mcl->cpus) {
+		struct rq *rq = cpu_rq(cpu);
+
+		raw_spin_lock_irqsave(&rq->__lock, flags);
+		mlt_update_load(rq, rq->curr, sched_clock(), UPDATE_TASK);
+		raw_spin_unlock_irqrestore(&rq->__lock, flags);
+	}
+
+	mcl->cur_freq = next_freq;
+	mcl->max_freq = policy->max;
+	mcl->max_freq_org = policy->cpuinfo.max_freq;
+}
+EXPORT_SYMBOL_GPL(mlt_cpufreq_transition_notifier);
+
+unsigned long mlt_latest_task_load(struct task_struct *p)
+{
+	struct mlt_part *part = &task_mlt(p)->part;
+	int idx = part->hist_idx - 1;
+
+	if (idx < 0)
+		idx = MLT_LOAD_PERIOD_COUNT - 1;
+
+	return part->load_history[idx];
 }
 
 int mlt_init(struct kobject *ems_kobj, struct device_node *dn)
 {
 	int cpu;
 	u64 now;
-	struct task_struct *p;
 
-	pcpu_mlt = alloc_percpu(struct mlt);
+	pcpu_mlt = alloc_percpu(struct mlt_cpu);
 	if (!pcpu_mlt) {
 		pr_err("failed to allocate mlt\n");
 		return -ENOMEM;
 	}
 
-	pcpu_mlt_cs = alloc_percpu(struct mlt);
-	if (!pcpu_mlt_cs) {
-		pr_err("failed to allocate mlt for c-state\n");
-		return -ENOMEM;
-	}
-
-	if (of_property_read_bool(dn, "uarch-mlt"))
+	if (of_property_read_bool(dn, "uarch-mlt") && !mlt_pmu_init())
 		uarch_supported = true;
 
 	now = sched_clock();
 	for_each_possible_cpu(cpu) {
-		struct mlt *mlt = per_cpu_ptr(pcpu_mlt, cpu);
-		struct mlt *mlt_cs = per_cpu_ptr(pcpu_mlt_cs, cpu);
+		struct mlt_cpu *mlt_cpu = per_cpu_ptr(pcpu_mlt, cpu);
+		struct mlt_cluster *mcl;
+		struct ems_cpu_topology *topo = percpu_topology(cpu);
+		int idx = topo->cluster_id;
 
-		mlt_alloc_and_init(mlt, cpu, CGROUP_COUNT, now, uarch_supported);
-		mlt_alloc_and_init(mlt_cs, cpu, CSTATE_MAX, now, false);
-	}
+		memset(mlt_cpu, 0, sizeof(struct mlt_cpu));
+		mlt_init_cpu(mlt_cpu, cpu, now);
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(p, &init_task.tasks, tasks) {
-		get_task_struct(p);
-		mlt_task_init(p);
-		put_task_struct(p);
-	}
-	rcu_read_unlock();
+		mlt_cpu->cluster = idx;
 
-	if (init_mlt_nr_run()) {
-		pr_err("failed to init mlt avg_nr_run\n");
-		return -ENOMEM;
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
+
+		mcl = &mlt_clusters[idx];
+		mcl->idx = idx;
+		cpumask_copy(&mcl->cpus, &topo->cluster_cpus);
 	}
 
 	if (sysfs_create_bin_file(ems_kobj, &bin_attr_multi_load))
 		pr_warn("failed to create multi_load\n");
+
+	sysfs_msg = kcalloc(MSG_SIZE, sizeof(char), GFP_KERNEL);
+
+	mlt_disabled = false;
 
 	return 0;
 }

@@ -8,14 +8,17 @@
 
 #include <trace/events/ems_debug.h>
 
-#include "ems.h"
+#include <soc/samsung/ems.h>
 
-static struct cpufreq_hook_data __percpu *cpufreq_hook_data;
+static struct cpufreq_hook_data {
+	int (*func_get_next_cap)(struct tp_env *env, struct cpumask *cpus, int dst_cpu);
+	int (*func_need_slack_timer)(void);
+} __percpu *cpufreq_hook_data;
 
 /* register call back when cpufreq governor initialized */
-void cpufreq_register_hook(int cpu, int (*func_get_next_cap)(struct tp_env *env,
-				struct cpumask *cpus, int dst_cpu),
-				int (*func_need_slack_timer)(void))
+void cpufreq_register_hook(int cpu,
+		int (*func_get_next_cap)(struct tp_env *env, struct cpumask *cpus, int dst_cpu),
+		int (*func_need_slack_timer)(void))
 {
 	struct cpufreq_hook_data *data = per_cpu_ptr(cpufreq_hook_data, cpu);
 
@@ -39,45 +42,65 @@ void cpufreq_unregister_hook(int cpu)
 }
 
 /******************************************************************************
- *                           Next capacity callback                           *
+ *                  cpufreq pressure for adaptive capacity                    *
  ******************************************************************************/
-/*
- * default next capacity for cpu selection
- * it computs next capacity without governor specificaions
+static DEFINE_PER_CPU(unsigned long, ems_cpufreq_pressure);
+/**
+ * ems_update_cpufreq_pressure() - Update cpufreq pressure for CPUs
+ * @policy: cpufreq policy of the CPUs.
+ *
+ * Update the value of cpufreq pressure for all @cpus in the policy.
+ *
+ * Can see this also,
+ *	cpufreq_update_pressure(struct cpufreq_policy *policy)
+ *	from drivers/cpufreq/cpufreq.c
  */
-static int default_get_next_cap(struct tp_env *env,
-			struct cpumask *cpus, int dst_cpu)
+void ems_update_cpufreq_pressure(struct cpufreq_policy *policy, unsigned int reason)
 {
-	unsigned long next_cap = 0;
+	unsigned long max_capacity, capped_freq, pressure, internal_capped_freq, old;
+	u32 max_freq;
 	int cpu;
 
-	for_each_cpu_and(cpu, cpus, cpu_active_mask) {
-		unsigned long util;
+	if (unlikely(ems_disabled()))
+		return;
 
-		if (cpu == dst_cpu) /* util with task */
-			util = env->cpu_stat[cpu].util_with;
-		else /* util without task */
-			util = env->cpu_stat[cpu].util_wo;
+	cpu = cpumask_first(policy->related_cpus);
+	max_freq = arch_scale_freq_ref(cpu);
+	internal_capped_freq = ego_get_internal_freq_limit(policy);
+	capped_freq = min(policy->max, internal_capped_freq);
 
-		/*
-		 * The cpu in the coregroup has same capacity and the
-		 * capacity depends on the cpu with biggest utilization.
-		 * Find biggest utilization in the coregroup and use it
-		 * as max floor to know what capacity the cpu will have.
-		 */
-		if (util > next_cap)
-			next_cap = util;
+	/*
+	 * Handle properly the boost frequencies, which should simply clean
+	 * the cpufreq pressure value.
+	 */
+	if (max_freq <= capped_freq) {
+		pressure = 0;
+	} else {
+		max_capacity = ems_get_origin_cpu_capacity(cpu);
+		pressure = max_capacity -
+			   mult_frac(max_capacity, capped_freq, max_freq);
 	}
 
-	return next_cap;
+	for_each_cpu(cpu, policy->related_cpus) {
+		old = READ_ONCE(per_cpu(ems_cpufreq_pressure, cpu));
+		WRITE_ONCE(per_cpu(ems_cpufreq_pressure, cpu), pressure);
+
+		if (old != pressure)
+			ems_update_cpu_capacity(cpu, reason);
+	}
 }
 
-/* return next cap */
-int cpufreq_get_next_cap(struct tp_env *env,
-			struct cpumask *cpus, int dst_cpu)
+unsigned long ems_get_cpufreq_pressure(int cpu)
 {
-	struct cpufreq_hook_data *data = per_cpu_ptr(cpufreq_hook_data,
-						cpumask_any(cpus));
+	return READ_ONCE(per_cpu(ems_cpufreq_pressure, cpu));
+}
+
+/******************************************************************************
+ *                           Next capacity callback                           *
+ ******************************************************************************/
+int cpufreq_get_next_cap(struct tp_env *env, struct cpumask *cpus, int dst_cpu)
+{
+	struct cpufreq_hook_data *data = per_cpu_ptr(cpufreq_hook_data, cpumask_any(cpus));
 
 	if (data && data->func_get_next_cap) {
 		int cap = data->func_get_next_cap(env, cpus, dst_cpu);
@@ -86,7 +109,7 @@ int cpufreq_get_next_cap(struct tp_env *env,
 			return cap;
 	}
 
-	return default_get_next_cap(env, cpus, dst_cpu);
+	return -1;
 }
 
 /******************************************************************************
@@ -115,8 +138,11 @@ void slack_timer_cpufreq(int cpu, bool idle_start, bool idle_end)
 	if (idle_start == idle_end)
 		return;
 
+	if (!cpumask_test_cpu(cpu, cpu_active_mask))
+		return;
+
 	if (timer_pending(timer))
-		del_timer_sync(timer);
+		timer_delete(timer);
 
 	if (idle_start)
 		slack_timer_add(timer, cpu);
@@ -124,7 +150,7 @@ void slack_timer_cpufreq(int cpu, bool idle_start, bool idle_end)
 
 static void slack_timer_func(struct timer_list *timer)
 {
-	int this_cpu = smp_processor_id();
+	int cpu = smp_processor_id();
 
 	/*
 	 * The purpose of slack-timer is to wake up the CPU from IDLE, in order
@@ -133,10 +159,10 @@ static void slack_timer_func(struct timer_list *timer)
 	 * This is important for platforms where CPU with higher frequencies
 	 * consume higher power even at IDLE.
 	 */
-	trace_slack_timer(this_cpu);
+	trace_slack_timer(cpu);
 
 	/* If slack timer is still needed, add slack timer again */
-	slack_timer_add(timer, this_cpu);
+	slack_timer_add(timer, cpu);
 }
 
 static void slack_timer_init(void)
@@ -145,9 +171,8 @@ static void slack_timer_init(void)
 
 	slack_timer = alloc_percpu(struct timer_list);
 
-	for_each_cpu(cpu, cpu_possible_mask)
-		timer_setup(per_cpu_ptr(slack_timer, cpu),
-				slack_timer_func, TIMER_PINNED);
+	for_each_possible_cpu(cpu)
+		timer_setup(per_cpu_ptr(slack_timer, cpu), slack_timer_func, TIMER_PINNED);
 }
 
 /******************************************************************************
@@ -156,77 +181,41 @@ static void slack_timer_init(void)
 #define FCLAMP_MIN	0
 #define FCLAMP_MAX	1
 
-struct fclamp {
+static struct fclamp {
 	struct fclamp_data fclamp_min;
 	struct fclamp_data fclamp_max;
 } __percpu **fclamp;
 
 #define per_cpu_fc(cpu)		(*per_cpu_ptr(fclamp, cpu))
 
-static int fclamp_monitor_group[CGROUP_COUNT];
-
 static struct fclamp_data boost_fcd;
+static int fclamp_monitor_group[CGROUP_COUNT];
 static int fclamp_boost;
-
-static int fclamp_skip_monitor_group(int boost, int group)
-{
-	/* Monitor all cgroups during boost. */
-	if (boost)
-		return 0;
-
-	return !fclamp_monitor_group[group];
-}
 
 static int fclamp_can_release(int cpu, struct fclamp_data *fcd, unsigned int boost)
 {
-	int period;
-	int target_period, target_ratio, type, active_ratio = 0;
-
-	target_period = fcd->target_period;
-	target_ratio = fcd->target_ratio;
-	type = fcd->type;
-
-	/*
-	 * Let's traversal consecutive windows of active ratio by target
-	 * period to check whether there's a busy or non-busy window.
-	 */
-	period = mlt_cur_period(cpu);
-	while (target_period) {
-		int group;
-
-		for (group = 0; group < CGROUP_COUNT; group++) {
-			if (fclamp_skip_monitor_group(boost, group))
-				continue;
-
-			active_ratio += mlt_art_cgroup_value(cpu,
-						period, group);
-		}
-
-		trace_fclamp_can_release(cpu, type, period, target_period,
-					target_ratio, active_ratio);
-
-		target_period--;
-		period = mlt_prev_period(period);
-	};
+	int length = fcd->target_period;
+	int target_ratio = fcd->target_ratio;
+	int type = fcd->type;
+	int active_ratio = mlt_cpu_value(cpu, length, AVERAGE, ACTIVE);
 
 	/* convert ratio normalized to 1024 to percentage and get average */
 	active_ratio = active_ratio * 100 / SCHED_CAPACITY_SCALE;
-	active_ratio /= fcd->target_period;
 
 	/*
 	 * Release fclamp max if cpu is busier than target and
 	 * release fclamp min if cpu is more idle than target.
 	 */
+
 	if (type == FCLAMP_MAX && active_ratio > target_ratio)
 		return 1;
-	if (type == FCLAMP_MIN && active_ratio < target_ratio)
+	else if (type == FCLAMP_MIN && active_ratio < target_ratio)
 		return 1;
 
 	return 0;
 }
 
-unsigned int
-fclamp_apply(struct cpufreq_policy *policy, unsigned int orig_freq)
+unsigned int fclamp_apply(struct cpufreq_policy *policy, unsigned int orig_freq)
 {
 	struct fclamp *fc = per_cpu_fc(policy->cpu);
 	struct fclamp_data *fcd;
@@ -242,12 +231,13 @@ fclamp_apply(struct cpufreq_policy *policy, unsigned int orig_freq)
 		if (orig_freq == policy->cpuinfo.max_freq)
 			return orig_freq;
 		fcd = &boost_fcd;
-	} else if (orig_freq > fc->fclamp_max.freq)
+	} else if (fc->fclamp_max.freq && (orig_freq > fc->fclamp_max.freq)) {
 		fcd = &fc->fclamp_max;
-	else if (orig_freq < fc->fclamp_min.freq)
+	} else if (fc->fclamp_min.freq && (orig_freq < fc->fclamp_min.freq)) {
 		fcd = &fc->fclamp_min;
-	else
+	} else {
 		return orig_freq;
+	}
 
 	if (!fcd->target_period)
 		return orig_freq;
@@ -269,19 +259,19 @@ fclamp_apply(struct cpufreq_policy *policy, unsigned int orig_freq)
 	if (type == FCLAMP_MIN && count == cpumask_weight(policy->cpus))
 		new_freq = orig_freq;
 	/* Release fclamp max when any cpu in policy is busier than target */
-	if (type == FCLAMP_MAX && count > 0)
+	else if (type == FCLAMP_MAX && count > 0)
+		new_freq = orig_freq;
+	/* Release fclamp max when sysbusy or gsc is activated */
+	else if (type == FCLAMP_MAX && (sysbusy_activated() || gsc_boost_activated()))
 		new_freq = orig_freq;
 
-	new_freq = clamp_val(new_freq, policy->cpuinfo.min_freq,
-				       policy->cpuinfo.max_freq);
-
+	new_freq = clamp_val(new_freq, policy->min, policy->max);
 	trace_fclamp_apply(policy->cpu, orig_freq, new_freq, boost, fcd);
 
 	return new_freq;
 }
 
-static int fclamp_emstune_notifier_call(struct notifier_block *nb,
-					unsigned long val, void *v)
+static int fclamp_emstune_notifier_call(struct notifier_block *nb, unsigned long val, void *v)
 {
 	struct emstune_set *cur_set = (struct emstune_set *)v;
 	int i, cpu;
@@ -290,16 +280,12 @@ static int fclamp_emstune_notifier_call(struct notifier_block *nb,
 		struct fclamp *fc = per_cpu_fc(cpu);
 
 		fc->fclamp_min.freq = cur_set->fclamp.min_freq[cpu];
-		fc->fclamp_min.target_period =
-				cur_set->fclamp.min_target_period[cpu];
-		fc->fclamp_min.target_ratio =
-				cur_set->fclamp.min_target_ratio[cpu];
+		fc->fclamp_min.target_period = cur_set->fclamp.min_target_period[cpu];
+		fc->fclamp_min.target_ratio = cur_set->fclamp.min_target_ratio[cpu];
 
 		fc->fclamp_max.freq = cur_set->fclamp.max_freq[cpu];
-		fc->fclamp_max.target_period =
-				cur_set->fclamp.max_target_period[cpu];
-		fc->fclamp_max.target_ratio =
-				cur_set->fclamp.max_target_ratio[cpu];
+		fc->fclamp_max.target_period = cur_set->fclamp.max_target_period[cpu];
+		fc->fclamp_max.target_ratio = cur_set->fclamp.max_target_ratio[cpu];
 	}
 
 	for (i = 0; i < CGROUP_COUNT; i++)
@@ -312,8 +298,7 @@ static struct notifier_block fclamp_emstune_notifier = {
 	.notifier_call = fclamp_emstune_notifier_call,
 };
 
-static int fclamp_sysbusy_notifier_call(struct notifier_block *nb,
-					unsigned long val, void *v)
+static int fclamp_sysbusy_notifier_call(struct notifier_block *nb, unsigned long val, void *v)
 {
 	enum sysbusy_state state = *(enum sysbusy_state *)v;
 
@@ -343,7 +328,7 @@ static int fclamp_init(void)
 		struct fclamp *fc;
 		int i;
 
-		if (cpu != cpumask_first(cpu_coregroup_mask(cpu)))
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
 			continue;
 
 		fc = kzalloc(sizeof(struct fclamp), GFP_KERNEL);
@@ -353,7 +338,7 @@ static int fclamp_init(void)
 		fc->fclamp_min.type = FCLAMP_MIN;
 		fc->fclamp_max.type = FCLAMP_MAX;
 
-		for_each_cpu(i, cpu_coregroup_mask(cpu))
+		for_each_cpu(i, cpu_clustergroup_mask(cpu))
 			per_cpu_fc(i) = fc;
 	}
 
@@ -384,3 +369,4 @@ int cpufreq_init(void)
 
 	return 0;
 }
+

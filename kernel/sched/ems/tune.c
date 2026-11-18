@@ -13,7 +13,7 @@
 #include <linux/uaccess.h>
 #include <linux/string.h>
 
-#include "ems.h"
+#include <soc/samsung/ems.h>
 
 #include <trace/events/ems.h>
 #include <trace/events/ems_debug.h>
@@ -23,9 +23,14 @@
 /******************************************************************************
  * emstune mode/level/set management                                          *
  ******************************************************************************/
+struct emstune_mode {
+	const char *desc;
+	struct emstune_set *sets;
+};
+
 struct {
 	struct emstune_mode *modes;
-	struct emstune_mode *modes_backup;
+	struct emstune_mode *backup;
 
 	int cur_mode;
 	int cur_level;
@@ -36,17 +41,70 @@ struct {
 	int boost_level;
 
 	struct {
-		int ongoing;
+		bool ongoing;
 		struct emstune_set set;
 		struct delayed_work work;
 	} boot;
 
-	struct device			*ems_dev;
-	struct notifier_block		nb;
-	struct emstune_mode_request	level_req;
-} emstune;
+	struct device *ems_dev;
+	struct notifier_block nb;
+	struct emstune_mode_request level_req;
 
-static inline struct emstune_set *emstune_cur_set(void)
+	spinlock_t lock;
+} emstune = {
+	.lock = __SPIN_LOCK_INITIALIZER(emstune.lock),
+};
+
+struct {
+	bool enabled;
+	int tid;
+	struct mutex lock;
+} task_boost = {
+	.tid = 0,
+	.lock = __MUTEX_INITIALIZER(task_boost.lock),
+};
+
+enum data_type {
+	BOOL_TYPE,
+	SIGNED_TYPE,
+	UNSIGNED_TYPE,
+	CPUMASK_TYPE,
+};
+
+enum arg_type {
+	CPU_ONLY,
+	CGROUP_ONLY,
+	CPU_CGROUP,
+	CPU_OPTION,
+	OPTION_ONLY,
+	NOP,
+};
+
+static inline bool is_invalid_cpu(unsigned int cpu)
+{
+	return cpu >= VENDOR_NR_CPUS;
+}
+
+static inline bool is_invalid_mode(int mode)
+{
+	return mode < 0 || mode >= emstune.mode_count;
+}
+
+static inline bool is_invalid_level(int level)
+{
+	return level < 0 || level >= emstune.level_count;
+}
+
+static inline bool is_invalid_cgroup(int cgroup)
+{
+	return cgroup < 0 || cgroup >= CGROUP_COUNT;
+}
+
+#define for_each_mode(mode)		for (mode = 0; mode < emstune.mode_count; mode++)
+#define for_each_level(level)		for (level = 0; level < emstune.level_count; level++)
+#define for_each_cgroup(cgroup)		for (cgroup = 0; cgroup < CGROUP_COUNT ; cgroup++)
+
+static inline struct emstune_set *get_current_set(void)
 {
 	if (!emstune.modes)
 		return NULL;
@@ -57,74 +115,65 @@ static inline struct emstune_set *emstune_cur_set(void)
 	return &emstune.modes[emstune.cur_mode].sets[emstune.cur_level];
 }
 
+/******************************************************************************/
+/* emstune level request                                                      */
+/******************************************************************************/
 static int emstune_notify(void);
-
-static DEFINE_SPINLOCK(emstune_lock);
-
 static void emstune_mode_change(int next_mode)
 {
 	unsigned long flags;
-	char msg[32];
 
-	spin_lock_irqsave(&emstune_lock, flags);
+	spin_lock_irqsave(&emstune.lock, flags);
 
 	if (emstune.cur_mode == next_mode) {
-		spin_unlock_irqrestore(&emstune_lock, flags);
+		spin_unlock_irqrestore(&emstune.lock, flags);
 		return;
 	}
 
 	trace_emstune_mode(emstune.cur_mode, emstune.cur_level);
 	emstune.cur_mode = next_mode;
 	emstune_notify();
+	trace_clock_set_rate("EMS mode", emstune.cur_mode, raw_smp_processor_id());
 
-	spin_unlock_irqrestore(&emstune_lock, flags);
-
-	snprintf(msg, sizeof(msg), "NOTI_MODE=%d", emstune.cur_mode);
-	send_uevent(msg);
+	spin_unlock_irqrestore(&emstune.lock, flags);
 }
 
 static void emstune_level_change(int next_level)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&emstune_lock, flags);
+	spin_lock_irqsave(&emstune.lock, flags);
 
 	if (emstune.cur_level == next_level) {
-		spin_unlock_irqrestore(&emstune_lock, flags);
+		spin_unlock_irqrestore(&emstune.lock, flags);
 		return;
 	}
 
 	trace_emstune_mode(emstune.cur_mode, emstune.cur_level);
 	emstune.cur_level = next_level;
 	emstune_notify();
+	trace_clock_set_rate("EMS level", emstune.cur_level, raw_smp_processor_id());
 
-	spin_unlock_irqrestore(&emstune_lock, flags);
+	spin_unlock_irqrestore(&emstune.lock, flags);
 }
 
 static void emstune_reset(int mode, int level)
 {
 	memcpy(&emstune.modes[mode].sets[level],
-	       &emstune.modes_backup[mode].sets[level],
-	       sizeof(struct emstune_set));
+			&emstune.backup[mode].sets[level],
+			sizeof(struct emstune_set));
 }
 
-/******************************************************************************
- * emstune level request                                                      *
- ******************************************************************************/
-static int emstune_pm_qos_notifier(struct notifier_block *nb,
-				unsigned long level, void *data)
+static int emstune_pm_qos_notifier(struct notifier_block *nb, unsigned long level, void *data)
 {
 	emstune_level_change(level);
 
 	return 0;
 }
 
-#define DEFAULT_LEVEL	(0)
-void __emstune_add_request(struct emstune_mode_request *req,
-					char *func, unsigned int line)
+void __emstune_add_request(struct emstune_mode_request *req, char *func, unsigned int line)
 {
-	if (dev_pm_qos_add_request(emstune.ems_dev, &req->dev_req,
-			DEV_PM_QOS_MIN_FREQUENCY, DEFAULT_LEVEL))
+	if (dev_pm_qos_add_request(emstune.ems_dev, &req->dev_req, DEV_PM_QOS_MIN_FREQUENCY, 0))
 		return;
 
 	req->func = func;
@@ -138,13 +187,12 @@ void emstune_remove_request(struct emstune_mode_request *req)
 }
 EXPORT_SYMBOL_GPL(emstune_remove_request);
 
-void emstune_update_request(struct emstune_mode_request *req, s32 new_level)
+void emstune_update_request(struct emstune_mode_request *req, int level)
 {
-	/* ignore if the value is out of range except boost level */
-	if ((new_level < 0 || new_level >= emstune.level_count))
+	if (is_invalid_level(level))
 		return;
 
-	dev_pm_qos_update_request(&req->dev_req, new_level);
+	dev_pm_qos_update_request(&req->dev_req, level);
 }
 EXPORT_SYMBOL_GPL(emstune_update_request);
 
@@ -169,15 +217,20 @@ int emstune_get_cur_level(void)
 }
 EXPORT_SYMBOL_GPL(emstune_get_cur_level);
 
-/******************************************************************************
- * emstune notify                                                             *
- ******************************************************************************/
+bool emstune_task_boost(void)
+{
+	return task_boost.enabled;
+}
+
+/******************************************************************************/
+/* emstune notify                                                             */
+/******************************************************************************/
 static RAW_NOTIFIER_HEAD(emstune_chain);
 
-/* emstune_lock *MUST* be held before notifying */
+/* emstune.lock *MUST* be held before notifying */
 static int emstune_notify(void)
 {
-	struct emstune_set *cur_set = emstune_cur_set();
+	struct emstune_set *cur_set = get_current_set();
 
 	if (!cur_set)
 		return 0;
@@ -197,359 +250,178 @@ int emstune_unregister_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(emstune_unregister_notifier);
 
-/******************************************************************************
- * initializing and parsing parameter                                         *
- ******************************************************************************/
-static char *task_cgroup_name[] = {
+/******************************************************************************/
+/* initializing and parsing parameter                                         */
+/******************************************************************************/
+char *task_cgroup_name[] = {
 	"root",
 	"foreground",
+	"foreground_window",
 	"background",
 	"top-app",
 	"rt",
 	"system",
 	"system-background",
+	"dex2oat",
 	"nnapi-hal",
 	"camera-daemon",
 };
 
-static inline void
-parse_coregroup_field(struct device_node *dn, const char *name,
-				int (field)[VENDOR_NR_CPUS],
-				int default_value)
+int task_cgroup_name_size = ARRAY_SIZE(task_cgroup_name);
+
+static inline void parse_coregroup_field(struct device_node *dn, const char *name,
+		int (field)[VENDOR_NR_CPUS], int default_value)
 {
 	int count, cpu, cursor;
-	u32 val[VENDOR_NR_CPUS];
+	unsigned int val[VENDOR_NR_CPUS];
 
 	for (count = 0; count < VENDOR_NR_CPUS; count++)
 		val[count] = default_value;
 
 	count = of_property_count_u32_elems(dn, name);
-	if (count < 0)
-		goto skip_parse_value;
+	if (count > 0)
+		of_property_read_u32_array(dn, name, (u32 *)&val, count);
 
-	if (of_property_read_u32_array(dn, name, (u32 *)&val, count))
-		goto skip_parse_value;
-
-skip_parse_value:
 	count = 0;
 	for_each_possible_cpu(cpu) {
-		if (cpu != cpumask_first(cpu_coregroup_mask(cpu)))
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
 			continue;
 
-		for_each_cpu(cursor, cpu_coregroup_mask(cpu))
+		for_each_cpu(cursor, cpu_clustergroup_mask(cpu))
 			field[cursor] = val[count];
 
 		count++;
 	}
 }
 
-static inline void
-parse_cgroup_field(struct device_node *dn, int *field, int default_value)
+static inline void parse_cgroup_field(struct device_node *dn, int *field, int default_value)
 {
-	int group, val;
+	int cgroup, val;
 
-	for (group = 0; group < CGROUP_COUNT; group++) {
-		if (!of_property_read_u32(dn, task_cgroup_name[group], &val))
-			field[group] = val;
+	for_each_cgroup(cgroup) {
+		if (!of_property_read_u32(dn, task_cgroup_name[cgroup], &val))
+			field[cgroup] = val;
 		else
-			field[group] = default_value;
+			field[cgroup] = default_value;
 	}
 }
 
-static inline int
-parse_cgroup_field_mask(struct device_node *dn, struct cpumask *mask)
+static inline int parse_cgroup_field_mask(struct device_node *dn, struct cpumask *mask)
 {
-	int group;
+	int cgroup;
 	const char *buf;
 
-	for (group = 0; group < CGROUP_COUNT; group++) {
-		if (!of_property_read_string(dn, task_cgroup_name[group], &buf))
-			cpulist_parse(buf, &mask[group]);
-		else {
-			/* if it failed to parse mask, set mask all */
-			cpumask_copy(&mask[group], cpu_possible_mask);
-		}
+	for_each_cgroup(cgroup) {
+		if (!of_property_read_string(dn, task_cgroup_name[cgroup], &buf))
+			cpulist_parse(buf, &mask[cgroup]);
+		else
+			cpumask_copy(&mask[cgroup], cpu_possible_mask);
 	}
 
 	return 0;
 }
 
-static inline void
-parse_cgroup_coregroup_field(struct device_node *dn,
-			int (field)[CGROUP_COUNT][VENDOR_NR_CPUS],
-			int default_value)
+static inline void parse_cgroup_coregroup_field(struct device_node *dn,
+		int (field)[CGROUP_COUNT][VENDOR_NR_CPUS], int default_value)
 {
-	int group;
+	int cgroup;
 
-	for (group = 0; group < CGROUP_COUNT; group++)
-		parse_coregroup_field(dn,
-			task_cgroup_name[group], field[group], default_value);
+	for_each_cgroup(cgroup)
+		parse_coregroup_field(dn, task_cgroup_name[cgroup], field[cgroup], default_value);
 }
 
-/* energy table */
-static void parse_specific_energy_table(struct device_node *dn,
-			       struct emstune_specific_energy_table *specific_et)
+static inline void parse_step_coregroup_field(struct device_node *dn, const char *name,
+		int (field)[VENDOR_NR_CPUS][DEFAULT_LATENCY_STEP], int default_value)
 {
-	parse_coregroup_field(dn, "capacity-mips-mhzs", specific_et->mips_mhz, 0);
-	parse_coregroup_field(dn, "dynamic-power-coeffs", specific_et->dynamic_coeff, 0);
+	int count, cpu, cursor, step;
+	unsigned int val[VENDOR_NR_CPUS][DEFAULT_LATENCY_STEP];
+
+	for (count = 0; count < VENDOR_NR_CPUS; count++)
+		for (step = 0; step < DEFAULT_LATENCY_STEP; step++)
+			val[count][step] = default_value;
+
+	count = of_property_count_u32_elems(dn, name);
+	if (count > 0)
+		of_property_read_u32_array(dn, name, (u32 *)&val, count);
+
+	count = 0;
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
+
+		for_each_cpu(cursor, cpu_clustergroup_mask(cpu))
+			for (step = 0; step < DEFAULT_LATENCY_STEP; step++)
+				field[cursor][step] = val[count][step];
+
+		count++;
+	}
 }
 
-/* sched policy */
-static void parse_sched_policy(struct device_node *dn,
-			struct emstune_sched_policy *sched_policy)
-{
-	parse_cgroup_field(dn, sched_policy->policy, 0);
-}
-
-/* active weight */
-static void parse_active_weight(struct device_node *dn,
-			struct emstune_active_weight *active_weight)
-{
-	parse_cgroup_coregroup_field(dn, active_weight->ratio, 100);
-}
-
-/* idle weight */
-static void parse_idle_weight(struct device_node *dn,
-			struct emstune_idle_weight *idle_weight)
-{
-	parse_cgroup_coregroup_field(dn, idle_weight->ratio, 100);
-}
-
-/* freqboost */
-static void parse_freqboost(struct device_node *dn,
-			struct emstune_freqboost *freqboost)
+static void parse_freqboost(struct device_node *dn, struct emstune_freqboost *freqboost)
 {
 	parse_cgroup_coregroup_field(dn, freqboost->ratio, 0);
 }
 
-/* cpufreq governor parameters */
-static void parse_cpufreq_gov(struct device_node *dn,
-			      struct emstune_cpufreq_gov *cpufreq_gov)
+static void parse_cpufreq_gov(struct device_node *dn, struct emstune_cpufreq_gov *cpufreq_gov)
 {
-	parse_coregroup_field(dn, "htask-boost", cpufreq_gov->htask_boost, 100);
+	if(of_property_read_u32(dn, "step-latency-enable",
+				&cpufreq_gov->step_latency_enable))
+		cpufreq_gov->step_latency_enable = 0;
+	if(of_property_read_u32(dn, "step-margin-enable",
+				&cpufreq_gov->step_margin_enable))
+		cpufreq_gov->step_margin_enable = 0;
+	parse_coregroup_field(dn, "ptb-margin", cpufreq_gov->ptb_margin, -1);
+	parse_coregroup_field(dn, "ptb-min-freq", cpufreq_gov->ptb_min_freq, 0);
+	parse_step_coregroup_field(dn, "step-pelt-margin", cpufreq_gov->step_pelt_margin, 0);
+	parse_step_coregroup_field(dn, "step-margin-freq", cpufreq_gov->step_margin_freq, 0);
 	parse_coregroup_field(dn, "pelt-boost", cpufreq_gov->pelt_boost, 0);
-
-	parse_coregroup_field(dn, "pelt-margin",
-			      cpufreq_gov->split_pelt_margin, 25);
-	parse_coregroup_field(dn, "pelt-margin-freq",
-			      cpufreq_gov->split_pelt_margin_freq, INT_MAX);
-
-	parse_coregroup_field(dn, "up-rate-limit-ms",
-			      cpufreq_gov->split_up_rate_limit, 4);
-	parse_coregroup_field(dn, "up-rate-limit-freq",
-			      cpufreq_gov->split_up_rate_limit_freq, INT_MAX);
-
-	if (of_property_read_u32(dn, "down-rate-limit-ms", &cpufreq_gov->down_rate_limit))
-		cpufreq_gov->down_rate_limit = 4; /* 4ms */
-
-	of_property_read_u32(dn, "rapid-scale-up", &cpufreq_gov->rapid_scale_up);
-	of_property_read_u32(dn, "rapid-scale-down", &cpufreq_gov->rapid_scale_down);
-	parse_coregroup_field(dn, "dis-buck-share", cpufreq_gov->dis_buck_share, 0);
+	parse_coregroup_field(dn, "window-count", cpufreq_gov->window_count, 2);
+	parse_coregroup_field(dn, "htask-ratio-threshold", cpufreq_gov->htask_ratio_threshold, 900);
+	parse_step_coregroup_field(dn, "step-latency", cpufreq_gov->step_latency_ns, 0);
+	parse_step_coregroup_field(dn, "step-latency-freq", cpufreq_gov->step_latency_freq, 0);
+	parse_coregroup_field(dn, "adap-fmax-enable", cpufreq_gov->adap_fmax_enable, 0);
+	parse_coregroup_field(dn, "adap-fmax-freq", cpufreq_gov->adap_fmax_freq, 0);
 }
 
-static void parse_cpuidle_gov(struct device_node *dn,
-			      struct emstune_cpuidle_gov *cpuidle_gov)
+static void parse_cpus_binding(struct device_node *dn, struct emstune_cpus_binding *cpus_binding)
 {
-	parse_coregroup_field(dn, "expired-ratio", cpuidle_gov->expired_ratio, 100);
-}
-
-/* ontime migration */
-#define UPPER_BOUNDARY	0
-#define LOWER_BOUNDARY	1
-
-static void __update_ontime_domain(struct ontime_dom *dom,
-				struct list_head *dom_list)
-{
-	/*
-	 * At EMS initializing time, capacity_cpu_orig() cannot be used
-	 * because it returns capacity that does not reflect frequency.
-	 * So, use et_max_cap() instead of capacity_cpu_orig().
-	 */
-	unsigned long max_cap = et_max_cap(cpumask_any(&dom->cpus));
-
-	if (dom->upper_ratio < 0)
-		dom->upper_boundary = 1024;
-	else if (dom == list_last_entry(dom_list, struct ontime_dom, node)) {
-		/* Upper boundary of last domain is meaningless */
-		dom->upper_boundary = 1024;
-	} else
-		dom->upper_boundary = max_cap * dom->upper_ratio / 100;
-
-	if (dom->lower_ratio < 0)
-		dom->lower_boundary = 0;
-	else if (dom == list_first_entry(dom_list, struct ontime_dom, node)) {
-		/* Lower boundary of first domain is meaningless */
-		dom->lower_boundary = 0;
-	} else
-		dom->lower_boundary = max_cap * dom->lower_ratio / 100;
-}
-
-static void update_ontime_domain(struct list_head *dom_list, int cpu,
-				unsigned long ratio, int type)
-{
-	struct ontime_dom *dom;
-
-	list_for_each_entry(dom, dom_list, node) {
-		if (cpumask_test_cpu(cpu, &dom->cpus)) {
-			if (type == UPPER_BOUNDARY)
-				dom->upper_ratio = ratio;
-			else
-				dom->lower_ratio = ratio;
-
-			__update_ontime_domain(dom, dom_list);
-		}
-	}
-}
-
-void emstune_ontime_init(void)
-{
-	int mode, level;
-
-	for (mode = 0; mode < emstune.mode_count; mode++) {
-		for (level = 0; level < emstune.level_count; level++) {
-			struct emstune_set *set;
-			struct ontime_dom *dom;
-
-			set = &emstune.modes[mode].sets[level];
-			list_for_each_entry(dom, &set->ontime.dom_list, node)
-				__update_ontime_domain(dom,
-						&set->ontime.dom_list);
-		}
-	}
-}
-
-static int init_dom_list(struct device_node *dn,
-				struct list_head *dom_list)
-{
-	struct device_node *dom_dn;
-
-	for_each_child_of_node(dn, dom_dn) {
-		struct ontime_dom *dom;
-		const char *buf;
-
-		dom = kzalloc(sizeof(struct ontime_dom), GFP_KERNEL);
-		if (!dom)
-			return -ENOMEM;
-
-		if (of_property_read_string(dom_dn, "cpus", &buf)) {
-			kfree(dom);
-			return -EINVAL;
-		}
-		else
-			cpulist_parse(buf, &dom->cpus);
-
-		if (of_property_read_u32(dom_dn, "upper-boundary",
-						&dom->upper_ratio))
-			dom->upper_ratio = -1;
-
-		if (of_property_read_u32(dom_dn, "lower-boundary",
-						&dom->lower_ratio))
-			dom->lower_ratio = -1;
-
-		/*
-		 * Init boundary as default.
-		 * Actual boundary value is set in cpufreq policy notifier.
-		 */
-		dom->upper_boundary = 1024;
-		dom->lower_boundary = 0;
-
-		list_add_tail(&dom->node, dom_list);
-	}
-
-	return 0;
-}
-
-static void parse_ontime(struct device_node *dn, struct emstune_ontime *ontime)
-{
-	parse_cgroup_field(dn, ontime->enabled, 0);
-
-	INIT_LIST_HEAD(&ontime->dom_list);
-	init_dom_list(dn, &ontime->dom_list);
-
-	ontime->p_dom_list = &ontime->dom_list;
-}
-
-/* cpus binding */
-static void parse_cpus_binding(struct device_node *dn,
-			struct emstune_cpus_binding *cpus_binding)
-{
-	if (of_property_read_u32(dn, "target-sched-class",
-			(unsigned int *)&cpus_binding->target_sched_class))
-		cpus_binding->target_sched_class = 0;
-
 	parse_cgroup_field_mask(dn, cpus_binding->mask);
 }
 
-/* task express */
-static void parse_tex(struct device_node *dn, struct emstune_tex *tex)
+static void parse_high_prio(struct device_node *dn, struct emstune_high_prio *high_prio)
 {
-	parse_cgroup_field(dn, tex->enabled, 0);
-
-	of_property_read_u32(dn, "prio", &tex->prio);
-}
-
-/* Fluid RT scheduling */
-static void parse_frt(struct device_node *dn, struct emstune_frt *frt)
-{
-	parse_coregroup_field(dn, "active-ratio", frt->active_ratio, 100);
-}
-
-/* CPU Sparing */
-static void update_ecs_threshold_ratio(struct list_head *domain_list,
-					int id, int ratio)
-{
-	struct ecs_domain *domain;
-
-	list_for_each_entry(domain, domain_list, node)
-		if (domain->id == id)
-			domain->busy_threshold_ratio = ratio;
-}
-
-static int init_ecs_domain_list(struct device_node *ecs_dn,
-		struct list_head *domain_list)
-{
-	struct device_node *domain_dn;
-	int id = 0;
-
-	INIT_LIST_HEAD(domain_list);
-
-	for_each_child_of_node(ecs_dn, domain_dn) {
-		struct ecs_domain *domain;
-
-		domain = kzalloc(sizeof(struct ecs_domain), GFP_KERNEL);
-		if (!domain)
-			return -ENOMEM;
-
-		if (of_property_read_u32(domain_dn, "busy-threshold-ratio",
-					(u32 *)&domain->busy_threshold_ratio))
-			domain->busy_threshold_ratio = 100;
-
-		domain->id = id++;
-		list_add_tail(&domain->node, domain_list);
-	}
-
-	return 0;
-}
-
-static void parse_ecs(struct device_node *dn, struct emstune_ecs *ecs)
-{
-	INIT_LIST_HEAD(&ecs->domain_list);
-	init_ecs_domain_list(dn, &ecs->domain_list);
+	parse_cgroup_field(dn, high_prio->threshold, 0);
 }
 
 static void parse_ecs_dynamic(struct device_node *dn, struct emstune_ecs_dynamic *dynamic)
 {
-	parse_coregroup_field(dn, "dynamic-busy-ratio", dynamic->dynamic_busy_ratio, 0);
+	const char *buf;
+	int cpu;
+	struct cpumask mask;
+
+	parse_coregroup_field(dn, "dynamic-busy-ratio", dynamic->dynamic_busy_ratio, 50);
+	parse_coregroup_field(dn, "dynamic-nr-run-up-ratio", dynamic->dynamic_nr_run_up_ratio, 0);
+	parse_coregroup_field(dn, "dynamic-help-misfit-thr", dynamic->dynamic_help_misfit_thr, 0);
+
+	if (of_property_read_string(dn, "min-cpus", &buf)) {
+		cpumask_copy(&dynamic->min_cpus, cpu_possible_mask);
+	} else {
+		/* re-mapping physical cpu id into logical cpu id */
+		cpumask_clear(&mask);
+		ems_cpulist_parse(buf, &mask);
+		for_each_cpu(cpu, &mask) {
+			int logid = get_cpu_log_id(cpu);
+			if (logid != -1)
+				cpumask_set_cpu(logid, &dynamic->min_cpus);
+		}
+	}
 }
 
-/* Margin applied to newly created task's utilization */
-static void parse_ntu(struct device_node *dn,
-				struct emstune_ntu *ntu)
+static void parse_ntu(struct device_node *dn, struct emstune_ntu *ntu)
 {
-	parse_cgroup_field(dn, ntu->ratio, 100);
+	parse_cgroup_field(dn, ntu->ratio, 0);
 }
 
-/* fclamp */
 static void parse_fclamp(struct device_node *dn, struct emstune_fclamp *fclamp)
 {
 	parse_coregroup_field(dn, "min-freq", fclamp->min_freq, 0);
@@ -560,41 +432,111 @@ static void parse_fclamp(struct device_node *dn, struct emstune_fclamp *fclamp)
 	parse_coregroup_field(dn, "max-target-period", fclamp->max_target_period, 0);
 	parse_coregroup_field(dn, "max-target-ratio", fclamp->max_target_ratio, 0);
 
-	parse_cgroup_field(of_get_child_by_name(dn, "monitor-group"),
-						fclamp->monitor_group, 0);
+	parse_cgroup_field(of_get_child_by_name(dn, "monitor-group"), fclamp->monitor_group, 0);
 }
 
-/* support uclamp */
-static void parse_support_uclamp(struct device_node *dn,
-		struct emstune_support_uclamp *su)
+static void parse_cpuidle_gov(struct device_node *dn, struct emstune_cpuidle_gov *cpuidle_gov)
+{
+	parse_coregroup_field(dn, "expired-ratio", cpuidle_gov->expired_ratio, 100);
+}
+
+static void parse_support_uclamp(struct device_node *dn, struct emstune_support_uclamp *su)
 {
 	if (of_property_read_u32(dn, "enabled", &su->enabled))
 		su->enabled = 1;
 }
 
-/* gsc */
-static void parse_gsc(struct device_node *dn,
-		struct emstune_gsc *gsc)
+static void parse_small_task(struct device_node *dn, struct emstune_small_task *st)
 {
-	if (of_property_read_u32(dn, "up_threshold", &gsc->up_threshold))
-		gsc->up_threshold = 1024;
-	if (of_property_read_u32(dn, "down_threshold", &gsc->down_threshold))
-		gsc->down_threshold = 1024;
-
-	parse_cgroup_field(of_get_child_by_name(dn, "monitor-group"), gsc->enabled, 0);
+	if (of_property_read_u32(dn, "small_task_thr", &st->small_task_thr))
+		st->small_task_thr = 25;
 }
 
-/* should spread */
-static void parse_should_spread(struct device_node *dn,
-		struct emstune_should_spread *ss)
+static void parse_gsc(struct device_node *dn, struct emstune_gsc *gsc)
+{
+	struct device_node *child;
+	int i;
+
+	for(i = GSC_LEVEL1; i < GSC_LEVEL_COUNT; i++) {
+		gsc->up_threshold[i] = UINT_MAX;
+		gsc->down_threshold[i] = UINT_MAX;
+	}
+
+	for_each_child_of_node(dn, child) {
+		int level;
+
+		if (of_property_read_u32(child, "level", &level))
+			continue;
+
+		if (of_property_read_u32(child, "up_threshold", &gsc->up_threshold[level]))
+			gsc->up_threshold[level] = UINT_MAX;
+
+		if (of_property_read_u32(child, "down_threshold", &gsc->down_threshold[level]))
+			gsc->down_threshold[level] = UINT_MAX;
+	}
+
+	if (of_property_read_u32(dn, "boost_en_threshold", &gsc->boost_en_threshold))
+		gsc->boost_en_threshold = UINT_MAX;
+	if (of_property_read_u32(dn, "boost_dis_threshold", &gsc->boost_dis_threshold))
+		gsc->boost_dis_threshold = UINT_MAX;
+	if (of_property_read_u32(dn, "boost_ratio", &gsc->boost_ratio))
+		gsc->boost_ratio = 0;
+}
+
+static void parse_should_spread(struct device_node *dn, struct emstune_should_spread *ss)
 {
 	if (of_property_read_u32(dn, "enabled", &ss->enabled))
 		ss->enabled = 0;
 }
 
-/******************************************************************************
- * emstune sched boost                                                        *
- ******************************************************************************/
+static void parse_frt(struct device_node *dn, struct emstune_frt *frt)
+{
+	parse_cgroup_field(dn, frt->boost_enabled, 0);
+	parse_coregroup_field(dn, "scale-freq-threshold", frt->scale_freq_threshold, 0);
+}
+
+static void set_value_cgroup_bit(unsigned int *field, int (enabled)[CGROUP_COUNT]);
+static void parse_cgroup_boost(struct device_node *dn, struct emstune_cgroup_boost *cgroup_boost)
+{
+	parse_cgroup_field(dn, cgroup_boost->enabled, 0);
+	set_value_cgroup_bit(&cgroup_boost->enabled_bit, cgroup_boost->enabled);
+}
+
+static void parse_et(struct device_node *dn, struct emstune_energy_table *et)
+{
+	if (of_property_read_u32(dn, "default-idx", &et->default_idx))
+		et->default_idx = 0;
+	if (of_property_read_s32(dn, "uarch-selection", &et->uarch_selection))
+		et->uarch_selection = false;
+}
+
+static void parse_util_est(struct device_node *dn, struct emstune_util_est *util_est)
+{
+	parse_cgroup_field(dn, util_est->enabled, 0);
+}
+
+static void parse_dslt(struct device_node *dn, struct emstune_dslt *dslt)
+{
+	parse_cgroup_field(of_get_child_by_name(dn, "runnable-sensitivity"), dslt->runnable_sensitivity, 0);
+	parse_cgroup_field(of_get_child_by_name(dn, "running-sensitivity"), dslt->running_sensitivity, 100);
+}
+
+#ifdef CONFIG_SCHED_EMS_DSU_SLICE_DOWN
+static void parse_dsu_slice_down(struct device_node *dn, struct emstune_dsu_slice_down *dsu_slice_down)
+{
+	if (of_property_read_u32(dn, "enabled", &dsu_slice_down->enabled))
+		dsu_slice_down->enabled = 0;
+}
+#endif
+
+static void parse_misfit_ratio(struct device_node *dn, struct emstune_misfit_ratio *misfit_ratio)
+{
+	parse_cgroup_coregroup_field(dn, misfit_ratio->ratio, 80);
+}
+
+/******************************************************************************/
+/* emstune sched boost                                                        */
+/******************************************************************************/
 static int sched_boost;
 
 int emstune_sched_boost(void)
@@ -602,23 +544,415 @@ int emstune_sched_boost(void)
 	return sched_boost;
 }
 
+static int sched_applaunch;
+
+int emstune_sched_applaunch(void)
+{
+	return sched_applaunch;
+}
+
+int emstune_small_task_thr(void)
+{
+	struct emstune_set *cur_set = get_current_set();
+
+	return cur_set->small_task.small_task_thr;
+}
+
 int emstune_support_uclamp(void)
 {
-	struct emstune_set *cur_set = emstune_cur_set();
+	struct emstune_set *cur_set = get_current_set();
 
 	return cur_set->support_uclamp.enabled;
 }
 
 int emstune_should_spread(void)
 {
-	struct emstune_set *cur_set = emstune_cur_set();
+	struct emstune_set *cur_set = get_current_set();
 
 	return cur_set->should_spread.enabled;
 }
 
-/******************************************************************************
- * sysfs for emstune                                                          *
- ******************************************************************************/
+int emstune_frt_boost_enabled(int cgroup)
+{
+	struct emstune_set *cur_set = get_current_set();
+
+	return cur_set->frt.boost_enabled[cgroup];
+}
+
+int emstune_frt_scale_freq_threshold(int cpu)
+{
+	struct emstune_set *cur_set = get_current_set();
+
+	return cur_set->frt.scale_freq_threshold[cpu];
+}
+
+static int sched_io_boost;
+
+int emstune_sched_io_boost(void)
+{
+	return sched_io_boost;
+}
+
+void emstune_set_sched_io_boost(int boost)
+{
+	sched_io_boost = boost;
+}
+EXPORT_SYMBOL_GPL(emstune_set_sched_io_boost);
+
+struct cpumask override_ta_binding = {};
+
+struct cpumask *override_ta_binding_mask(struct task_struct *p)
+{
+	int group_idx;
+
+	group_idx = cpuctl_task_group_idx(p);
+	if (group_idx != CGROUP_TOPAPP || unlikely(cpumask_empty(&override_ta_binding)))
+		return NULL;
+
+	return &override_ta_binding;
+}
+
+void emstune_set_ta_binding(struct cpumask *mask)
+{
+	if (mask == NULL)
+		cpumask_clear(&override_ta_binding);
+	else
+		cpumask_copy(&override_ta_binding, mask);
+
+	trace_emstune_set_ta_binding(mask);
+}
+EXPORT_SYMBOL_GPL(emstune_set_ta_binding);
+
+static bool ems_adaptive_cap;
+
+bool emstune_adaptive_cap(void)
+{
+	return ems_adaptive_cap;
+}
+
+int emstune_et_default_idx(void)
+{
+	struct emstune_set *cur_set = get_current_set();
+
+	return cur_set->et.default_idx;
+}
+EXPORT_SYMBOL_GPL(emstune_et_default_idx);
+
+/******************************************************************************/
+/* emstune cgroup boost                                                        */
+/******************************************************************************/
+bool emstune_need_cgroup_boost(struct task_struct *p)
+{
+	struct emstune_set *cur_set = get_current_set();
+
+	return (cur_set->cgroup_boost.enabled_bit & (1 << cpuctl_task_group_idx(p)));
+}
+
+/******************************************************************************/
+/* All in One Tuner                                                           */
+/******************************************************************************/
+struct aio_tuner_item {
+	int			id;
+	const char		*name;
+	enum arg_type		atype;
+	enum data_type		dtype;
+	int			limit;
+	const char		*comment;
+};
+
+enum {
+	freqboost,
+	cpufreq_pelt_boost,
+	cpufreq_ptb_min_freq,
+	cpufreq_ptb_margin,
+	cpufreq_step_latency_enable,
+	cpufreq_step_latency_ns,
+	cpufreq_step_latency_freq,
+	cpufreq_step_margin_enable,
+	cpufreq_step_pelt_margin,
+	cpufreq_step_margin_freq,
+	cpufreq_adap_fmax_enable,
+	cpufreq_adap_fmax_freq,
+	fclamp_freq,
+	fclamp_period,
+	fclamp_ratio,
+	fclamp_monitor_group,
+	cpus_binding_cpumask,
+	ecs_min_cpus,
+	ecs_busy_ratio,
+	ecs_nr_run_up_ratio,
+	ecs_help_misfit_thr,
+	gsc_up_threshold,
+	gsc_down_threshold,
+	gsc_boost_en_threshold,
+	gsc_boost_dis_threshold,
+	gsc_boost_ratio,
+	high_prio,
+	ntu_ratio,
+	cpuidle_expired_ratio,
+	support_uclamp,
+	small_task,
+	should_spread,
+	frt_boost,
+	frt_scale_freq_threshold,
+	cgroup_boost,
+	cpufreq_htask_window_count,
+	cpufreq_htask_ratio_threshold,
+	et_default_idx,
+	et_uarch_selection,
+	util_est_enabled,
+	dslt_runnable_sensitivity,
+	dslt_running_sensitivity,
+#ifdef CONFIG_SCHED_EMS_DSU_SLICE_DOWN
+	dsu_slice_down,
+#endif
+	misfit_ratio,
+	item_count,
+};
+
+#define MAX_RATIO	10000
+#define I(name)		name, #name
+struct aio_tuner_item aio_tuner_items[] = {
+	/* .id, .name,			.atype,		.dtype,		.limit */
+	{ I(freqboost),			CPU_CGROUP,	SIGNED_TYPE,	MAX_RATIO },
+	{ I(cpufreq_pelt_boost),	CPU_ONLY,	SIGNED_TYPE,	MAX_RATIO },
+	{ I(cpufreq_ptb_min_freq),	CPU_ONLY,	UNSIGNED_TYPE,	INT_MAX,},
+	{ I(cpufreq_ptb_margin),	CPU_ONLY,	SIGNED_TYPE,	MAX_RATIO },
+	{ I(cpufreq_step_latency_enable),NOP,		BOOL_TYPE,	0 },
+	{ I(cpufreq_step_latency_ns),	CPU_ONLY,	UNSIGNED_TYPE,	MAX_RATIO },
+	{ I(cpufreq_step_latency_freq),CPU_ONLY,	UNSIGNED_TYPE,	INT_MAX,},
+	{ I(cpufreq_step_margin_enable),NOP,		BOOL_TYPE,	0 },
+	{ I(cpufreq_step_pelt_margin),	CPU_ONLY,	UNSIGNED_TYPE,	MAX_RATIO },
+	{ I(cpufreq_step_margin_freq),	CPU_ONLY,	UNSIGNED_TYPE,	INT_MAX,},
+	{ I(cpufreq_adap_fmax_enable),	CPU_ONLY,	SIGNED_TYPE,	MAX_RATIO,},
+	{ I(cpufreq_adap_fmax_freq),	CPU_ONLY,	UNSIGNED_TYPE,	INT_MAX,},
+	{ I(fclamp_freq),		CPU_OPTION,	UNSIGNED_TYPE,	INT_MAX, "option:min=0,max=1" },
+	{ I(fclamp_period),		CPU_OPTION,	UNSIGNED_TYPE,	100, "option:min=0,max=1" },
+	{ I(fclamp_ratio), 		CPU_OPTION,	UNSIGNED_TYPE,	1000, "option:min=0,max=1" },
+	{ I(fclamp_monitor_group),	CGROUP_ONLY,	BOOL_TYPE,	0 },
+	{ I(cpus_binding_cpumask),	CGROUP_ONLY,	CPUMASK_TYPE,	0, "value:cpumask" },
+	{ I(ecs_min_cpus),		NOP,		CPUMASK_TYPE,	0, "value:cpumask" },
+	{ I(ecs_busy_ratio),		CPU_ONLY,	UNSIGNED_TYPE,	MAX_RATIO,},
+	{ I(ecs_nr_run_up_ratio),	CPU_ONLY,	UNSIGNED_TYPE,	MAX_RATIO,},
+	{ I(ecs_help_misfit_thr),	CPU_ONLY,	UNSIGNED_TYPE,	MAX_RATIO,},
+	{ I(gsc_up_threshold),		OPTION_ONLY,	UNSIGNED_TYPE,	INT_MAX, "option:gsc level=1,2"},
+	{ I(gsc_down_threshold),	OPTION_ONLY,	UNSIGNED_TYPE,	INT_MAX, "option:gsc level=1,2"},
+	{ I(gsc_boost_en_threshold),	NOP,		UNSIGNED_TYPE,	INT_MAX,},
+	{ I(gsc_boost_dis_threshold),	NOP,		UNSIGNED_TYPE,	INT_MAX,},
+	{ I(gsc_boost_ratio),		NOP,		UNSIGNED_TYPE,	INT_MAX,},
+	{ I(high_prio),			CGROUP_ONLY,	UNSIGNED_TYPE,	MAX_PRIO },
+	{ I(ntu_ratio),			CGROUP_ONLY,	SIGNED_TYPE,	100 },
+	{ I(cpuidle_expired_ratio),	CPU_ONLY,	UNSIGNED_TYPE,	MAX_RATIO },
+	{ I(support_uclamp),		NOP,		BOOL_TYPE,	0 },
+	{ I(small_task),		NOP,		UNSIGNED_TYPE,	1024 },
+	{ I(should_spread),		NOP,		BOOL_TYPE,	0 },
+	{ I(frt_boost),			CGROUP_ONLY,	BOOL_TYPE,	0 },
+	{ I(frt_scale_freq_threshold),	CPU_ONLY, 	SIGNED_TYPE, 	MAX_RATIO },
+	{ I(cgroup_boost),		CGROUP_ONLY,	BOOL_TYPE,	0 },
+	{ I(cpufreq_htask_window_count),CPU_ONLY,	SIGNED_TYPE,	MLT_PERIOD_COUNT },
+	{ I(cpufreq_htask_ratio_threshold),CPU_ONLY,	SIGNED_TYPE,	MAX_RATIO },
+	{ I(et_default_idx),		NOP,		UNSIGNED_TYPE,	INT_MAX },
+	{ I(et_uarch_selection),	NOP,		SIGNED_TYPE,	INT_MAX },
+	{ I(util_est_enabled),		CGROUP_ONLY,	UNSIGNED_TYPE,	100 },
+	{ I(dslt_runnable_sensitivity),	CGROUP_ONLY,	SIGNED_TYPE,	INT_MAX},
+	{ I(dslt_running_sensitivity),	CGROUP_ONLY,	SIGNED_TYPE,	INT_MAX},
+#ifdef CONFIG_SCHED_EMS_DSU_SLICE_DOWN
+	{ I(dsu_slice_down),		NOP,		SIGNED_TYPE,	INT_MAX },
+#endif
+	{ I(misfit_ratio),              CPU_CGROUP,     UNSIGNED_TYPE,  100 },
+};
+
+static int sanity_check_default(int id, int mode, int level)
+{
+	if (id < 0 || id >= item_count)
+		return -EINVAL;
+	if (is_invalid_mode(mode))
+		return -EINVAL;
+	if (is_invalid_level(level))
+		return -EINVAL;
+
+	return 0;
+}
+
+static int step_sanity_check_convert_value(char *arg, int *v)
+{
+	long value[DEFAULT_LATENCY_STEP];
+	char *token = arg;
+	int i = 0;
+
+	while ((token = strsep(&arg, ",")) != NULL && i < DEFAULT_LATENCY_STEP) {
+		if (kstrtol(token, 10, &value[i]) != 0) {
+			return -EINVAL;
+		}
+		i++;
+	}
+
+	for (i = 0; i < DEFAULT_LATENCY_STEP; i++)
+		v[i] = value[i];
+
+	return 0;
+}
+
+static int sanity_check_convert_value(char *arg, enum data_type type, int limit, int *v)
+{
+	struct cpumask mask;
+	long value;
+
+	switch (type) {
+	case BOOL_TYPE:
+		if (kstrtol(arg, 10, &value))
+			return -EINVAL;
+		*v = !!value;
+		break;
+	case SIGNED_TYPE:
+		if (kstrtol(arg, 10, &value))
+			return -EINVAL;
+		if (value < -limit || value > limit)
+			return -EINVAL;
+		*v = value;
+		break;
+	case UNSIGNED_TYPE:
+		if (kstrtol(arg, 10, &value))
+			return -EINVAL;
+		if (value < 0 || value > limit)
+			return -EINVAL;
+		*v = value;
+		break;
+	case CPUMASK_TYPE:
+		if (arg[0] == '0' && toupper(arg[1]) == 'X')
+			arg = arg + 2;
+		if (cpumask_parse(arg, &mask) || cpumask_empty(&mask))
+			return -EINVAL;
+		*v = *(int *)cpumask_bits(&mask);
+		break;
+	}
+
+	return 0;
+}
+
+static void set_value_single(int *field, int value)
+{
+	*field = value;
+}
+
+static void set_value_coregroup(int (field)[VENDOR_NR_CPUS], int cpu, int value)
+{
+	int i;
+
+	for_each_cpu(i, cpu_clustergroup_mask(cpu))
+		field[i] = value;
+}
+
+static void set_value_cgroup(int (field)[CGROUP_COUNT], int cgroup, int value)
+{
+	if (is_invalid_cgroup(cgroup)) {
+		for_each_cgroup(cgroup)
+			field[cgroup] = value;
+	} else {
+		field[cgroup] = value;
+	}
+}
+
+static void set_value_cgroup_bit(unsigned int *field, int (enabled)[CGROUP_COUNT])
+{
+	unsigned int bits = 0;
+	int cgroup;
+
+	for_each_cgroup(cgroup) {
+		if (enabled[cgroup])
+			bits |= (1 << cgroup);
+	}
+	*field = bits;
+}
+
+static void set_value_coregroup_cgroup(int (field)[CGROUP_COUNT][VENDOR_NR_CPUS],
+		int cpu, int cgroup, int value)
+{
+	int i;
+
+	if (is_invalid_cgroup(cgroup)) {
+		for_each_cgroup(cgroup) {
+			for_each_cpu(i, cpu_clustergroup_mask(cpu))
+				field[cgroup][i] = value;
+		}
+	} else {
+		for_each_cpu(i, cpu_clustergroup_mask(cpu))
+			field[cgroup][i] = value;
+	}
+}
+
+static void set_value_step_coregroup(int (field)[VENDOR_NR_CPUS][DEFAULT_LATENCY_STEP],
+		int cpu, int (value)[DEFAULT_LATENCY_STEP])
+{
+	int i, step;
+
+	for_each_cpu(i, cpu_clustergroup_mask(cpu)) {
+		for (step = 0; step < DEFAULT_LATENCY_STEP; step++) {
+			if (value[step] >= 0)
+				field[i][step] = value[step];
+			else
+				field[i][step] = 0;
+		}
+	}
+}
+
+static void set_value_cpumask(struct cpumask *dmask, int value)
+{
+	const unsigned long new_value = value;
+	struct cpumask *new_mask = to_cpumask(&new_value);
+
+	cpumask_copy(dmask, new_mask);
+}
+
+static void set_value_cgroup_cpumask(struct cpumask *dmask, int cgroup, int value)
+{
+	const unsigned long new_value = value;
+	struct cpumask *new_mask = to_cpumask(&new_value);
+
+	cpumask_copy(&dmask[cgroup], new_mask);
+}
+
+ void set_gsc_threshold(unsigned int *field, int option, int value)
+{
+	if (valid_gsc_level(option)) {
+		if (value < 0)
+			value = 0;
+
+		field[option] = value;
+	}
+}
+
+#define NUM_OF_KEY	10
+static int string_to_keys(char *cmd_str, int keys[NUM_OF_KEY])
+{
+	char *ptr;
+	long val;
+	int i;
+
+	for (i = 0; i < NUM_OF_KEY; i++)
+		keys[i] = -1;
+
+	ptr = strsep(&cmd_str, ",");
+	i = 0;
+	while (ptr != NULL) {
+		if (kstrtol(ptr, 10, &val))
+			return -EINVAL;
+
+		if (i >= NUM_OF_KEY)
+			return -EINVAL;
+
+		keys[i] = (int)val;
+		i++;
+
+		ptr = strsep(&cmd_str, ",");
+	};
+
+	return 0;
+}
+
+/******************************************************************************/
+/* sysfs for emstune                                                          */
+/******************************************************************************/
 static ssize_t sched_boost_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -643,39 +977,81 @@ static ssize_t sched_boost_store(struct device *dev,
 }
 DEVICE_ATTR_RW(sched_boost);
 
+static ssize_t adaptive_cap_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", ems_adaptive_cap);
+}
+
+static ssize_t adaptive_cap_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int en;
+
+	if (sscanf(buf, "%d", &en) != 1)
+		return -EINVAL;
+
+	ems_adaptive_cap = !!en;
+
+	return count;
+}
+DEVICE_ATTR_RW(adaptive_cap);
+
+static ssize_t sched_applaunch_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", sched_applaunch);
+}
+
+static ssize_t sched_applaunch_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int boost;
+
+	if (sscanf(buf, "%d", &boost) != 1)
+		return -EINVAL;
+
+	/* ignore if requested mode is out of range */
+	if (boost < 0 || boost >= 100)
+		return -EINVAL;
+
+	sched_applaunch = boost;
+
+	return count;
+}
+DEVICE_ATTR_RW(sched_applaunch);
+
 static ssize_t status_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	int ret = 0, mode, level;
 	unsigned long flags;
 
-	for (mode = 0; mode < emstune.mode_count; mode++)
-		ret += sprintf(buf + ret, "mode%d : %s\n",
-				mode, emstune.modes[mode].desc);
+	for_each_mode(mode)
+		ret += sprintf(buf + ret, "mode%d : %s\n", mode, emstune.modes[mode].desc);
 
 	ret += sprintf(buf + ret, "\n");
-	spin_lock_irqsave(&emstune_lock, flags);
+	spin_lock_irqsave(&emstune.lock, flags);
 
 	ret += sprintf(buf + ret, "┌─────");
-	for (mode = 0; mode < emstune.mode_count; mode++)
+	for_each_mode(mode)
 		ret += sprintf(buf + ret, "┬──────");
 	ret += sprintf(buf + ret, "┐\n");
 
 	ret += sprintf(buf + ret, "│     ");
-	for (mode = 0; mode < emstune.mode_count; mode++)
+	for_each_mode(mode)
 		ret += sprintf(buf + ret, "│ mode%d", mode);
 	ret += sprintf(buf + ret, "│\n");
 
 	ret += sprintf(buf + ret, "├─────");
-	for (mode = 0; mode < emstune.mode_count; mode++)
+	for_each_mode(mode)
 		ret += sprintf(buf + ret, "┼──────");
 	ret += sprintf(buf + ret, "┤\n");
 
-	for (level = 0; level < emstune.level_count; level++) {
+	for_each_level(level) {
 		ret += sprintf(buf + ret, "│ lv%d ", level);
-		for (mode = 0; mode < emstune.mode_count; mode++) {
-			if (mode == emstune.cur_mode &&
-					level == emstune.cur_level)
+		for_each_mode(mode) {
+			if (mode == emstune.cur_mode && level == emstune.cur_level)
 				ret += sprintf(buf + ret, "│  curr");
 			else
 				ret += sprintf(buf + ret, "│      ");
@@ -686,18 +1062,18 @@ static ssize_t status_show(struct device *dev,
 			break;
 
 		ret += sprintf(buf + ret, "├-----");
-		for (mode = 0; mode < emstune.mode_count; mode++)
+		for_each_mode(mode)
 			ret += sprintf(buf + ret, "┼------");
 		ret += sprintf(buf + ret, "┤\n");
 	}
 
 	ret += sprintf(buf + ret, "└─────");
-	for (mode = 0; mode < emstune.mode_count; mode++)
+	for_each_mode(mode)
 		ret += sprintf(buf + ret, "┴──────");
 	ret += sprintf(buf + ret, "┘\n");
 
 	ret += sprintf(buf + ret, "\n");
-	spin_unlock_irqrestore(&emstune_lock, flags);
+	spin_unlock_irqrestore(&emstune.lock, flags);
 
 	return ret;
 }
@@ -709,9 +1085,9 @@ static ssize_t req_mode_show(struct device *dev,
 	int ret;
 	unsigned long flags;
 
-	spin_lock_irqsave(&emstune_lock, flags);
+	spin_lock_irqsave(&emstune.lock, flags);
 	ret = sprintf(buf, "%d\n", emstune.cur_mode);
-	spin_unlock_irqrestore(&emstune_lock, flags);
+	spin_unlock_irqrestore(&emstune.lock, flags);
 
 	return ret;
 }
@@ -725,7 +1101,7 @@ static ssize_t req_mode_store(struct device *dev,
 		return -EINVAL;
 
 	/* ignore if requested mode is out of range */
-	if (mode < 0 || mode >= emstune.mode_count)
+	if (is_invalid_mode(mode))
 		return -EINVAL;
 
 	emstune_mode_change(mode);
@@ -740,9 +1116,9 @@ static ssize_t req_level_show(struct device *dev,
 	int ret;
 	unsigned long flags;
 
-	spin_lock_irqsave(&emstune_lock, flags);
+	spin_lock_irqsave(&emstune.lock, flags);
 	ret = sprintf(buf, "%d\n", emstune.cur_level);
-	spin_unlock_irqrestore(&emstune_lock, flags);
+	spin_unlock_irqrestore(&emstune.lock, flags);
 
 	return ret;
 }
@@ -755,7 +1131,7 @@ static ssize_t req_level_store(struct device *dev,
 	if (sscanf(buf, "%d", &level) != 1)
 		return -EINVAL;
 
-	if (level < 0 || level >= emstune.level_count)
+	if (is_invalid_level(level))
 		return -EINVAL;
 
 	emstune_update_request(&emstune.level_req, level);
@@ -776,15 +1152,11 @@ static ssize_t req_level_debug_show(struct device *dev,
 		struct emstune_mode_request *req;
 
 		f_req = container_of(pos, struct freq_qos_request, pnode);
-		d_req = container_of(f_req, struct dev_pm_qos_request,
-							data.freq);
-		req = container_of(d_req, struct emstune_mode_request,
-							dev_req);
+		d_req = container_of(f_req, struct dev_pm_qos_request, data.freq);
+		req = container_of(d_req, struct emstune_mode_request, dev_req);
 
-		count++;
 		ret += snprintf(buf + ret, PAGE_SIZE, "%d: %d (%s:%d)\n",
-					count, f_req->pnode.prio,
-					req->func, req->line);
+				++count, f_req->pnode.prio, req->func, req->line);
 	}
 
 	return ret;
@@ -805,8 +1177,7 @@ static ssize_t reset_store(struct device *dev,
 	if (sscanf(buf, "%d %d", &mode, &level) != 2)
 		return -EINVAL;
 
-	if (mode < 0 || mode >= emstune.mode_count ||
-	    level < 0 || level >= emstune.level_count)
+	if (is_invalid_mode(mode) || is_invalid_level(level))
 		return -EINVAL;
 
 	emstune_reset(mode, level);
@@ -815,90 +1186,14 @@ static ssize_t reset_store(struct device *dev,
 }
 DEVICE_ATTR_RW(reset);
 
-enum aio_tuner_item_type {
-	TYPE1,		/* cpu */
-	TYPE2,		/* group */
-	TYPE3,		/* cpu,group */
-	TYPE4,		/* cpu,option */
-	TYPE5,		/* option */
-	TYPE6,		/* nop */
-};
-
-#define	I(x, type, comm)	x,
-#define ITEM_LIST							\
-	I(sched_policy,			TYPE2,	"")			\
-	I(active_weight,		TYPE3,	"")			\
-	I(idle_weight,			TYPE3,	"")			\
-	I(freqboost,			TYPE3,	"")			\
-	I(cpufreq_gov_pelt_boost,	TYPE1,	"")			\
-	I(cpufreq_gov_htask_boost,	TYPE1,	"")			\
-	I(cpufreq_gov_dis_buck_share,	TYPE1,	"")			\
-	I(cpufreq_gov_pelt_margin,	TYPE1,	"")			\
-	I(cpufreq_gov_pelt_margin_freq,	TYPE1,	"")			\
-	I(cpufreq_gov_rate_limit,	TYPE1,	"")			\
-	I(cpufreq_gov_rate_limit_freq,	TYPE1,	"")			\
-	I(fclamp_freq,			TYPE4,	"option:min=0,max=1")	\
-	I(fclamp_period,		TYPE4,	"option:min=0,max=1")	\
-	I(fclamp_ratio,			TYPE4,	"option:min=0,max=1")	\
-	I(fclamp_monitor_group,		TYPE2,	"")			\
-	I(ontime_en,			TYPE2,	"")			\
-	I(ontime_boundary,		TYPE4,	"option:up=0,lo=1")	\
-	I(cpus_binding_tsc,		TYPE6,	"val:mask")		\
-	I(cpus_binding_cpumask,		TYPE2,	"val:mask")		\
-	I(tex_en,			TYPE2,	"")			\
-	I(tex_prio,			TYPE6,	"")			\
-	I(ecs_threshold_ratio,		TYPE5,	"option:stage_id")	\
-	I(ecs_dynamic_busy_ratio,	TYPE1,	"")			\
-	I(ntu_ratio,			TYPE2,	"")			\
-	I(frt_active_ratio,		TYPE1,	"")			\
-	I(cpuidle_gov_expired_ratio,	TYPE1,	"")	\
-	I(support_uclamp,           TYPE6,  "")	\
-	I(gsc_en,			TYPE2,	"")			\
-	I(gsc_up_threshold,           TYPE6,  "")	\
-	I(gsc_down_threshold,           TYPE6,  "")	\
-	I(should_spread,           TYPE6,  "")
-
-enum { ITEM_LIST field_count };
-
-struct aio_tuner_item {
-	int		id;
-	const char	*name;
-	int		param_type;
-	const char	*comment;
-} aio_tuner_items[field_count];
-
-static void aio_tuner_items_init(void)
-{
-	int i;
-
-#undef	I
-#define	I(x, type, comm) #x,
-	const char * const item_name[] = { ITEM_LIST };
-
-#undef	I
-#define	I(x, type, comm) type,
-	const int item_type[] = { ITEM_LIST };
-
-#undef	I
-#define	I(x, type, comm) comm,
-	const char * const item_comm[] = { ITEM_LIST };
-
-	for (i = 0; i < field_count; i++) {
-		aio_tuner_items[i].id = i;
-		aio_tuner_items[i].name = item_name[i];
-		aio_tuner_items[i].param_type = item_type[i];
-		aio_tuner_items[i].comment = item_comm[i];
-	}
-}
-
 static ssize_t func_list_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	int ret = 0, i;
 
-	for (i = 0; i < field_count; i++) {
+	for (i = 0; i < item_count; i++) {
 		ret += sprintf(buf + ret, "%d:%s\n",
-			aio_tuner_items[i].id, aio_tuner_items[i].name);
+				aio_tuner_items[i].id, aio_tuner_items[i].name);
 	}
 
 	return ret;
@@ -910,38 +1205,25 @@ static ssize_t aio_tuner_show(struct device *dev,
 {
 	int ret = 0, i;
 
-	ret = sprintf(buf + ret, "\n");
+	ret += sprintf(buf + ret, "\n");
 	ret += sprintf(buf + ret, "echo <func,mode,level,...> <value> > aio_tuner\n");
 	ret += sprintf(buf + ret, "\n");
 
-	for (i = 0; i < field_count; i++) {
+	for (i = 0; i < item_count; i++) {
 		struct aio_tuner_item *item = &aio_tuner_items[i];
-		char key[20] = { 0 };
-
-		switch (item->param_type) {
-		case TYPE1:
-			strcpy(key, ",cpu");
-			break;
-		case TYPE2:
-			strcpy(key, ",group");
-			break;
-		case TYPE3:
-			strcpy(key, ",cpu,group");
-			break;
-		case TYPE4:
-			strcpy(key, ",cpu,option");
-			break;
-		case TYPE5:
-			strcpy(key, ",option");
-			break;
-		case TYPE6:
-			break;
+		char *args[] = {
+			",cpu",
+			",cgroup",
+			",cpu,cgroup",
+			",cpu,option",
+			",option",
+			"",
 		};
 
 		ret += sprintf(buf + ret, "[%d] %s\n", item->id, item->name);
-		ret += sprintf(buf + ret, "	# echo {%d,mode,level%s} {val} > aio_tuner\n",
-									item->id, key);
-		if (strlen(item->comment))
+		ret += sprintf(buf + ret, "	# echo {%d,mode,level%s} {value} > aio_tuner\n",
+				item->id, args[item->atype]);
+		if (item->comment)
 			ret += sprintf(buf + ret, "	(%s)\n", item->comment);
 		ret += sprintf(buf + ret, "\n");
 	}
@@ -949,368 +1231,222 @@ static ssize_t aio_tuner_show(struct device *dev,
 	return ret;
 }
 
-#define STR_LEN 10
-static int cut_hexa_prefix(char *str)
-{
-	int i;
-
-	if (!(str[0] == '0' && str[1] == 'x'))
-		return -EINVAL;
-
-	for (i = 0; i + 2 < STR_LEN; i++) {
-		str[i] = str[i + 2];
-		str[i + 2] = '\n';
-	}
-
-	return 0;
-}
-
-static int sanity_check_default(int field, int mode, int level)
-{
-	if (field < 0 || field >= field_count)
-		return -EINVAL;
-	if (mode < 0 || mode >= emstune.mode_count)
-		return -EINVAL;
-	if (level < 0 || level >= emstune.level_count)
-		return -EINVAL;
-
-	return 0;
-}
-
-static int sanity_check_option(int cpu, int group, int type)
-{
-	if (cpu < 0 || cpu > NR_CPUS)
-		return -EINVAL;
-	if (group < 0)
-		return -EINVAL;
-	if (!(type == 0 || type == 1))
-		return -EINVAL;
-
-	return 0;
-}
-
-enum val_type {
-	VAL_TYPE_ONOFF,
-	VAL_TYPE_RATIO,
-	VAL_TYPE_RATIO_NEGATIVE,
-	VAL_TYPE_LEVEL,
-	VAL_TYPE_CPU,
-	VAL_TYPE_MASK,
-};
-
-static int
-sanity_check_convert_value(char *arg, enum val_type type, int limit, void *v)
-{
-	int ret = 0;
-	long value;
-
-	switch (type) {
-	case VAL_TYPE_ONOFF:
-		if (kstrtol(arg, 10, &value))
-			return -EINVAL;
-		*(int *)v = !!(int)value;
-		break;
-	case VAL_TYPE_RATIO_NEGATIVE:
-		if (kstrtol(arg, 10, &value))
-			return -EINVAL;
-		if (value < -limit || value > limit)
-			return -EINVAL;
-		*(int *)v = (int)value;
-		break;
-	case VAL_TYPE_RATIO:
-	case VAL_TYPE_LEVEL:
-	case VAL_TYPE_CPU:
-		if (kstrtol(arg, 10, &value))
-			return -EINVAL;
-		if (value < 0 || value > limit)
-			return -EINVAL;
-		*(int *)v = (int)value;
-		break;
-	case VAL_TYPE_MASK:
-		if (cut_hexa_prefix(arg))
-			return -EINVAL;
-		if (cpumask_parse(arg, (struct cpumask *)v) ||
-		    cpumask_empty((struct cpumask *)v))
-			return -EINVAL;
-		break;
-	}
-
-	return ret;
-}
-
-static void
-set_value_single(int *field, char *v, enum val_type type, int limit)
-{
-	int value;
-
-	if (sanity_check_convert_value(v, VAL_TYPE_LEVEL, limit, &value))
-		return;
-
-	*field = value;
-}
-
-static void
-set_value_coregroup(int (field)[VENDOR_NR_CPUS], int cpu, char *v,
-				enum val_type type, int limit)
-{
-	int i, value;
-
-	if (sanity_check_option(cpu, 0, 0))
-		return;
-
-	if (sanity_check_convert_value(v, type, limit, &value))
-		return;
-
-	for_each_cpu(i, cpu_coregroup_mask(cpu))
-		field[i] = value;
-}
-
-static void
-set_value_cgroup(int (field)[CGROUP_COUNT], int group, char *v,
-				enum val_type type, int limit)
-{
-	int value;
-
-	if (sanity_check_option(0, group, 0))
-		return;
-
-	if (sanity_check_convert_value(v, type, limit, &value))
-		return;
-
-	if (group >= CGROUP_COUNT) {
-		for (group = 0; group < CGROUP_COUNT; group++)
-			field[group] = value;
-		return;
-	}
-
-	field[group] = value;
-}
-
-static void
-set_value_cgroup_coregroup(int (field)[CGROUP_COUNT][VENDOR_NR_CPUS],
-				int cpu, int group, char *v,
-				enum val_type type, int limit)
-{
-	int i, value;
-
-	if (sanity_check_option(cpu, group, 0))
-		return;
-
-	if (sanity_check_convert_value(v, type, limit, &value))
-		return;
-
-	if (group >= CGROUP_COUNT) {
-		for (group = 0; group < CGROUP_COUNT; group++)
-			for_each_cpu(i, cpu_coregroup_mask(cpu))
-				field[group][i] = value;
-		return;
-	}
-
-	for_each_cpu(i, cpu_coregroup_mask(cpu))
-		field[group][i] = value;
-}
-
-#define NUM_OF_KEY	(10)
-
-#define MAX_RATIO		10000 /* 10000% */
-#define MAX_ESG_STEP		20
-#define MAX_PATIENT_TICK	100
-#define MAX_RATE_LIMIT		1000 /* 1000ms */
-
 static ssize_t aio_tuner_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct emstune_set *set;
-	char arg0[100], arg1[100], *_arg, *ptr;
-	int keys[NUM_OF_KEY], i, ret, v;
-	long val;
-	int mode, level, field, cpu, group, type;
-	struct cpumask mask;
+	struct aio_tuner_item *item;
+	char cmd_str[100], value_str[100];
+	int keys[NUM_OF_KEY], value, step_value[DEFAULT_LATENCY_STEP];
+	int mode, level, id, cpu = 0, cgroup = 0, option = 0;
 
-	if (sscanf(buf, "%99s %99s", arg0, arg1) != 2)
+	if (sscanf(buf, "%99s %99s", cmd_str, value_str) != 2)
 		return -EINVAL;
 
-	/* fill keys with default value(-1) */
-	for (i = 0; i < NUM_OF_KEY; i++)
-		keys[i] = -1;
+	/* Convert command string to keys array */
+	if (string_to_keys(cmd_str, keys))
+		return -EINVAL;
 
-	/* classify key input value by comma(,) */
-	_arg = arg0;
-	ptr = strsep(&_arg, ",");
-	i = 0;
-	while (ptr != NULL) {
-		ret = kstrtol(ptr, 10, &val);
-		if (ret)
-			return ret;
-
-		keys[i] = (int)val;
-		i++;
-
-		ptr = strsep(&_arg, ",");
-	};
-
-	field = keys[0];
+	id = keys[0];
 	mode = keys[1];
 	level = keys[2];
 
-	if (sanity_check_default(field, mode, level))
+	/* Basic validation check */
+	if (sanity_check_default(id, mode, level))
 		return -EINVAL;
 
 	set = &emstune.modes[mode].sets[level];
+	item = &aio_tuner_items[id];
 
-	switch (field) {
-	case sched_policy:
-		set_value_cgroup(set->sched_policy.policy, keys[3], arg1,
-					VAL_TYPE_LEVEL, NUM_OF_SCHED_POLICY);
-		break;
-	case active_weight:
-		set_value_cgroup_coregroup(set->active_weight.ratio,
-					keys[3], keys[4], arg1,
-					VAL_TYPE_RATIO, MAX_RATIO);
-		break;
-	case idle_weight:
-		set_value_cgroup_coregroup(set->idle_weight.ratio,
-					keys[3], keys[4], arg1,
-					VAL_TYPE_RATIO, MAX_RATIO);
-		break;
-	case freqboost:
-		set_value_cgroup_coregroup(set->freqboost.ratio,
-					keys[3], keys[4], arg1,
-					VAL_TYPE_RATIO_NEGATIVE, MAX_RATIO);
-		break;
-	case cpufreq_gov_pelt_margin:
-		set_value_coregroup(set->cpufreq_gov.split_pelt_margin, keys[3], arg1,
-					VAL_TYPE_RATIO_NEGATIVE, MAX_RATIO);
-		break;
-	case cpufreq_gov_htask_boost:
-		set_value_coregroup(set->cpufreq_gov.htask_boost, keys[3], arg1,
-					VAL_TYPE_RATIO_NEGATIVE, MAX_RATIO);
-		break;
-	case cpufreq_gov_pelt_boost:
-		set_value_coregroup(set->cpufreq_gov.pelt_boost, keys[3], arg1,
-					VAL_TYPE_RATIO_NEGATIVE, MAX_RATIO);
-		break;
-	case cpufreq_gov_rate_limit:
-		set_value_coregroup(set->cpufreq_gov.split_up_rate_limit, keys[3], arg1,
-					VAL_TYPE_LEVEL, INT_MAX);
-		break;
-	case cpuidle_gov_expired_ratio:
-		set_value_coregroup(set->cpuidle_gov.expired_ratio, keys[3], arg1,
-					VAL_TYPE_RATIO, MAX_RATIO);
-		break;
-	case ontime_en:
-		set_value_cgroup(set->ontime.enabled, keys[3], arg1,
-					VAL_TYPE_ONOFF, 0);
-		break;
-	case ontime_boundary:
+	/* this case would be tuning for step latency & freq */
+	if (strchr(value_str, ',')) {
+		if (step_sanity_check_convert_value(value_str, step_value))
+			return -EINVAL;
+	}
+	else {
+		/* Convert value string to value with sanity checking */
+		if (sanity_check_convert_value(value_str, item->dtype, item->limit, &value))
+			return -EINVAL;
+	}
+
+	/* Get & check each key according to arguemnt type */
+	switch (item->atype) {
+	case CPU_ONLY:
 		cpu = keys[3];
-		type = !!keys[4];
-		if (sanity_check_option(cpu, 0, 0))
+		if (is_invalid_cpu(cpu) || !cpu_possible(cpu))
 			return -EINVAL;
-		if (sanity_check_convert_value(arg1, VAL_TYPE_LEVEL, 1024, &v))
-			return -EINVAL;
-		update_ontime_domain(&set->ontime.dom_list, cpu, v, type);
 		break;
-	case cpus_binding_tsc:
-		if (kstrtol(arg1, 0, &val))
+	case CGROUP_ONLY:
+		cgroup = keys[3];
+		if (is_invalid_cgroup(cgroup))
 			return -EINVAL;
-		val &= EMS_SCHED_CLASS_MASK;
-		set->cpus_binding.target_sched_class = 0;
-		for (i = 0; i < NUM_OF_SCHED_CLASS; i++)
-			if (test_bit(i, &val))
-				set_bit(i, &set->cpus_binding.target_sched_class);
+		break;
+	case CPU_CGROUP:
+		cpu = keys[3];
+		cgroup = keys[4];
+		if (is_invalid_cgroup(cgroup))
+			return -EINVAL;
+		if (is_invalid_cpu(cpu) || !cpu_possible(cpu))
+			return -EINVAL;
+		break;
+	case CPU_OPTION:
+		cpu = keys[3];
+		option = keys[4];
+		if (is_invalid_cpu(cpu) || !cpu_possible(cpu))
+			return -EINVAL;
+		break;
+	case OPTION_ONLY:
+		option = keys[3];
+		break;
+	default:
+		break;
+	}
+
+	/* Set value actually */
+	switch (id) {
+	case freqboost:
+		set_value_coregroup_cgroup(set->freqboost.ratio, cpu, cgroup, value);
+		break;
+	case cpufreq_ptb_min_freq:
+		set_value_coregroup(set->cpufreq_gov.ptb_min_freq, cpu, value);
+		break;
+	case cpufreq_ptb_margin:
+		set_value_coregroup(set->cpufreq_gov.ptb_margin, cpu, value);
+		break;
+	case cpufreq_step_latency_enable:
+		set_value_single(&set->cpufreq_gov.step_latency_enable, value);
+		break;
+	case cpufreq_step_latency_ns:
+		set_value_step_coregroup(set->cpufreq_gov.step_latency_ns, cpu, step_value);
+		break;
+	case cpufreq_step_latency_freq:
+		set_value_step_coregroup(set->cpufreq_gov.step_latency_freq, cpu, step_value);
+		break;
+	case cpufreq_step_margin_enable:
+		set_value_single(&set->cpufreq_gov.step_margin_enable, value);
+		break;
+	case cpufreq_step_pelt_margin:
+		set_value_step_coregroup(set->cpufreq_gov.step_pelt_margin, cpu, step_value);
+		break;
+	case cpufreq_step_margin_freq:
+		set_value_step_coregroup(set->cpufreq_gov.step_margin_freq, cpu, step_value);
+		break;
+	case cpufreq_adap_fmax_enable:
+		set_value_coregroup(set->cpufreq_gov.adap_fmax_enable, cpu, value);
+		break;
+	case cpufreq_adap_fmax_freq:
+		set_value_coregroup(set->cpufreq_gov.adap_fmax_freq, cpu, value);
+		break;
+	case cpufreq_pelt_boost:
+		set_value_coregroup(set->cpufreq_gov.pelt_boost, cpu, value);
+		break;
+	case cpuidle_expired_ratio:
+		set_value_coregroup(set->cpuidle_gov.expired_ratio, cpu, value);
 		break;
 	case cpus_binding_cpumask:
-		group = keys[3];
-		if (sanity_check_option(0, group, 0))
-			return -EINVAL;
-		if (sanity_check_convert_value(arg1, VAL_TYPE_MASK, 0, &mask))
-			return -EINVAL;
-		cpumask_copy(&set->cpus_binding.mask[group], &mask);
+		set_value_cgroup_cpumask(set->cpus_binding.mask, cgroup, value);
 		break;
-	case tex_en:
-		set_value_cgroup(set->tex.enabled, keys[3], arg1,
-					VAL_TYPE_ONOFF, 0);
+	case ecs_min_cpus:
+		set_value_cpumask(&set->ecs_dynamic.min_cpus, value);
 		break;
-	case tex_prio:
-		set_value_single(&set->tex.prio, arg1,
-					VAL_TYPE_LEVEL, MAX_PRIO);
+	case ecs_busy_ratio:
+		set_value_coregroup(set->ecs_dynamic.dynamic_busy_ratio, cpu, value);
 		break;
-	case frt_active_ratio:
-		set_value_coregroup(set->frt.active_ratio, keys[3], arg1,
-					VAL_TYPE_RATIO, MAX_RATIO);
+	case ecs_nr_run_up_ratio:
+		set_value_coregroup(set->ecs_dynamic.dynamic_nr_run_up_ratio, cpu, value);
 		break;
-	case ecs_threshold_ratio:
-		i = keys[3];
-		if (sanity_check_convert_value(arg1, VAL_TYPE_LEVEL, 10000, &v))
-			return -EINVAL;
-		update_ecs_threshold_ratio(&set->ecs.domain_list, i, v);
-		break;
-	case ecs_dynamic_busy_ratio:
-		set_value_coregroup(set->ecs_dynamic.dynamic_busy_ratio, keys[3], arg1,
-				VAL_TYPE_RATIO, MAX_RATIO);
-		break;
-	case ntu_ratio:
-		set_value_cgroup(set->ntu.ratio, keys[3], arg1,
-					VAL_TYPE_RATIO_NEGATIVE, 100);
+	case ecs_help_misfit_thr:
+		set_value_coregroup(set->ecs_dynamic.dynamic_help_misfit_thr, cpu, value);
 		break;
 	case fclamp_freq:
-		type = !!keys[4];
-		if (type)
-			set_value_coregroup(set->fclamp.max_freq, keys[3],
-					arg1, VAL_TYPE_LEVEL, 10000000);
+		if (option)
+			set_value_coregroup(set->fclamp.max_freq, cpu, value);
 		else
-			set_value_coregroup(set->fclamp.min_freq, keys[3],
-					arg1, VAL_TYPE_LEVEL, 10000000);
+			set_value_coregroup(set->fclamp.min_freq, cpu, value);
 		break;
 	case fclamp_period:
-		type = !!keys[4];
-		if (type)
-			set_value_coregroup(set->fclamp.max_target_period,
-					keys[3], arg1, VAL_TYPE_LEVEL, 100);
+		if (option)
+			set_value_coregroup(set->fclamp.max_target_period, cpu, value);
 		else
-			set_value_coregroup(set->fclamp.min_target_period,
-					keys[3], arg1, VAL_TYPE_LEVEL, 100);
+			set_value_coregroup(set->fclamp.min_target_period, cpu, value);
 		break;
 	case fclamp_ratio:
-		type = !!keys[4];
-		if (type)
-			set_value_coregroup(set->fclamp.max_target_ratio,
-					keys[3], arg1, VAL_TYPE_LEVEL, 1000);
+		if (option)
+			set_value_coregroup(set->fclamp.max_target_ratio, cpu, value);
 		else
-			set_value_coregroup(set->fclamp.min_target_ratio,
-					keys[3], arg1, VAL_TYPE_LEVEL, 1000);
+			set_value_coregroup(set->fclamp.min_target_ratio, cpu, value);
 		break;
 	case fclamp_monitor_group:
-		set_value_cgroup(set->fclamp.monitor_group, keys[3], arg1,
-					VAL_TYPE_ONOFF, 0);
-		break;
-	case cpufreq_gov_pelt_margin_freq:
-		set_value_coregroup(set->cpufreq_gov.split_pelt_margin_freq, keys[3], arg1,
-					VAL_TYPE_LEVEL, INT_MAX);
-		break;
-	case cpufreq_gov_rate_limit_freq:
-		set_value_coregroup(set->cpufreq_gov.split_up_rate_limit_freq, keys[3], arg1,
-					VAL_TYPE_LEVEL, INT_MAX);
-		break;
-	case cpufreq_gov_dis_buck_share:
-		set_value_coregroup(set->cpufreq_gov.dis_buck_share, keys[3], arg1,
-					VAL_TYPE_LEVEL, 100);
-		break;
-	case support_uclamp:
-		set_value_single(&set->support_uclamp.enabled, arg1, VAL_TYPE_ONOFF, 1);
-		break;
-	case gsc_en:
-		set_value_cgroup(set->gsc.enabled, keys[3], arg1, VAL_TYPE_ONOFF, 0);
+		set_value_cgroup(set->fclamp.monitor_group, cgroup, value);
 		break;
 	case gsc_up_threshold:
-		set_value_single(&set->gsc.up_threshold, arg1, VAL_TYPE_LEVEL, 1024);
+		set_gsc_threshold(set->gsc.up_threshold, option, value);
 		break;
 	case gsc_down_threshold:
-		set_value_single(&set->gsc.down_threshold, arg1, VAL_TYPE_LEVEL, 1024);
+		set_gsc_threshold(set->gsc.down_threshold, option, value);
+		break;
+	case gsc_boost_en_threshold:
+		set_value_single(&set->gsc.boost_en_threshold, value);
+		break;
+	case gsc_boost_dis_threshold:
+		set_value_single(&set->gsc.boost_dis_threshold, value);
+		break;
+	case gsc_boost_ratio:
+		set_value_single(&set->gsc.boost_ratio, value);
+		break;
+	case high_prio:
+		set_value_cgroup(set->high_prio.threshold, cgroup, value);
+		break;
+	case ntu_ratio:
+		set_value_cgroup(set->ntu.ratio, cgroup, value);
+		break;
+	case support_uclamp:
+		set_value_single(&set->support_uclamp.enabled, value);
+		break;
+	case small_task:
+		set_value_single(&set->small_task.small_task_thr, value);
 		break;
 	case should_spread:
-		set_value_single(&set->should_spread.enabled, arg1, VAL_TYPE_ONOFF, 1);
+		set_value_single(&set->should_spread.enabled, value);
+		break;
+	case frt_boost:
+		set_value_cgroup(set->frt.boost_enabled, cgroup, value);
+		break;
+	case frt_scale_freq_threshold:
+		set_value_coregroup(set->frt.scale_freq_threshold, cpu, value);
+		break;
+	case cgroup_boost:
+		set_value_cgroup(set->cgroup_boost.enabled, cgroup, value);
+		set_value_cgroup_bit(&set->cgroup_boost.enabled_bit, set->cgroup_boost.enabled);
+		break;
+	case cpufreq_htask_window_count:
+		set_value_coregroup(set->cpufreq_gov.window_count, cpu, value);
+		break;
+	case cpufreq_htask_ratio_threshold:
+		set_value_coregroup(set->cpufreq_gov.htask_ratio_threshold, cpu, value);
+		break;
+	case et_default_idx:
+		set_value_single(&set->et.default_idx, value);
+		break;
+	case et_uarch_selection:
+		set_value_single(&set->et.uarch_selection, value);
+		break;
+	case util_est_enabled:
+		set_value_cgroup(set->util_est.enabled, cgroup, value);
+		break;
+	case dslt_runnable_sensitivity:
+		set_value_cgroup(set->dslt.runnable_sensitivity, cgroup, value);
+		break;
+	case dslt_running_sensitivity:
+		set_value_cgroup(set->dslt.running_sensitivity, cgroup, value);
+		break;
+#ifdef CONFIG_SCHED_EMS_DSU_SLICE_DOWN
+	case dsu_slice_down:
+		set_value_single(&set->dsu_slice_down.enabled, value);
+		break;
+#endif
+	case misfit_ratio:
+		set_value_coregroup_cgroup(set->misfit_ratio.ratio, cpu, cgroup, value);
 		break;
 	}
 
@@ -1320,275 +1456,181 @@ static ssize_t aio_tuner_store(struct device *dev,
 }
 DEVICE_ATTR_RW(aio_tuner);
 
-static char *task_cgroup_simple_name[] = {
+char *task_cgroup_simple_name[] = {
 	"root",
 	"fg",
+	"fgw",
 	"bg",
 	"ta",
 	"rt",
 	"sy",
 	"syb",
+	"dex",
 	"n-h",
 	"c-d",
 };
 
-static const char *get_sched_class_str(int class)
+static ssize_t print_with_cgroup(char *msg, int (field)[CGROUP_COUNT])
 {
-	if (class & EMS_SCHED_STOP)
-		return "STOP";
-	if (class & EMS_SCHED_DL)
-		return "DL";
-	if (class & EMS_SCHED_RT)
-		return "RT";
-	if (class & EMS_SCHED_FAIR)
-		return "FAIR";
-	if (class & EMS_SCHED_IDLE)
-		return "IDLE";
+	int cgroup;
+	ssize_t count = 0;
 
-	return NULL;
+	for_each_cgroup(cgroup)
+		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[cgroup]);
+	count += sprintf(msg + count, "\n");
+	for_each_cgroup(cgroup)
+		count += sprintf(msg + count, "%4d", field[cgroup]);
+	count += sprintf(msg + count, "\n");
+
+	return count;
 }
 
-static int get_type_pending_bit(int type)
+static ssize_t print_with_cpu_cgroup(char *msg, int (field)[CGROUP_COUNT][VENDOR_NR_CPUS])
 {
-	int bit = 0;
+	int cpu, cgroup;
+	ssize_t count = 0;
 
-	type >>= 1;
-	while (type) {
-		type >>= 1;
-		bit++;
+	count += sprintf(msg + count, "     ");
+	for_each_cgroup(cgroup)
+		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[cgroup]);
+	count += sprintf(msg + count, "\n");
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
+		count += sprintf(msg + count, "cpu%d:", cpu);
+		for_each_cgroup(cgroup)
+			count += sprintf(msg + count, "%4d", field[cgroup][cpu]);
+		count += sprintf(msg + count, "\n");
 	}
 
-	return bit;
+	return count;
 }
 
 #define MSG_SIZE 8192
 static ssize_t cur_set_read(struct file *file, struct kobject *kobj,
-		struct bin_attribute *attr, char *buf,
-		loff_t offset, size_t size)
+		struct bin_attribute *attr, char *buf, loff_t offset, size_t size)
 {
-	struct emstune_set *cur_set = emstune_cur_set();
-	int cpu, group, class;
+	struct emstune_set *cur_set = get_current_set();
 	char *msg = kcalloc(MSG_SIZE, sizeof(char), GFP_KERNEL);
 	ssize_t count = 0, msg_size;
+	int cpu, cgroup, level, step;
+
+	if (!msg)
+		return 0;
 
 	/* mode/level info */
 	if (emstune.boot.ongoing)
 		count += sprintf(msg + count, "Booting exclusive mode\n");
 	else
-		count += sprintf(msg + count, "%s mode : level%d [mode=%d level=%d]\n",
-				emstune.modes[emstune.cur_mode].desc,
-				emstune.cur_level,
-				get_type_pending_bit(EMSTUNE_MODE_TYPE(cur_set->type)),
-				get_type_pending_bit(EMSTUNE_BOOST_TYPE(cur_set->type)));
-	count += sprintf(msg + count, "\n");
-
-	/* sched policy */
-	count += sprintf(msg + count, "[sched-policy]\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
-	count += sprintf(msg + count, "\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4d", cur_set->sched_policy.policy[group]);
-	count += sprintf(msg + count, "\n\n");
-
-	/* active weight */
-	count += sprintf(msg + count, "[active-weight]\n");
-	count += sprintf(msg + count, "     ");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
-	count += sprintf(msg + count, "\n");
-	for_each_possible_cpu(cpu) {
-		count += sprintf(msg + count, "cpu%d:", cpu);
-		for (group = 0; group < CGROUP_COUNT; group++)
-			count += sprintf(msg + count, "%4d",
-					cur_set->active_weight.ratio[group][cpu]);
-		count += sprintf(msg + count, "\n");
-	}
-	count += sprintf(msg + count, "\n");
-
-	/* idle weight */
-	count += sprintf(msg + count, "[idle-weight]\n");
-	count += sprintf(msg + count, "     ");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
-	count += sprintf(msg + count, "\n");
-	for_each_possible_cpu(cpu) {
-		count += sprintf(msg + count, "cpu%d:", cpu);
-		for (group = 0; group < CGROUP_COUNT; group++)
-			count += sprintf(msg + count, "%4d",
-					cur_set->idle_weight.ratio[group][cpu]);
-		count += sprintf(msg + count, "\n");
-	}
+		count += sprintf(msg + count, "[%d] %s mode : level%d\n",
+				cur_set->mode, emstune.modes[cur_set->mode].desc, cur_set->level);
 	count += sprintf(msg + count, "\n");
 
 	/* freq boost */
 	count += sprintf(msg + count, "[freq-boost]\n");
-	count += sprintf(msg + count, "     ");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
-	count += sprintf(msg + count, "\n");
-	for_each_possible_cpu(cpu) {
-		count += sprintf(msg + count, "cpu%d:", cpu);
-		for (group = 0; group < CGROUP_COUNT; group++)
-			count += sprintf(msg + count, "%4d",
-					cur_set->freqboost.ratio[group][cpu]);
-		count += sprintf(msg + count, "\n");
-	}
+	count += print_with_cpu_cgroup(msg + count, cur_set->freqboost.ratio);
 	count += sprintf(msg + count, "\n");
 
 	/* cpufreq gov */
 	count += sprintf(msg + count, "[cpufreq gov]\n");
-	count += sprintf(msg + count, "                    |-pelt margin--||-rate limit--|\n");
-	count += sprintf(msg + count, "       pb   hb  dbs  margin    freq   rate    freq\n");
+	count += sprintf(msg + count, "      %12s  %12s %12s %12s  %14s\n",
+		"pelt_boost", "ptb_min_freq", "ptb_margin",
+		"window_count", "htask_ratio_threshold");
 	for_each_possible_cpu(cpu) {
-		count += sprintf(msg + count, "cpu%d: %3d  %3d %4d", cpu,
-				cur_set->cpufreq_gov.pelt_boost[cpu],
-				cur_set->cpufreq_gov.htask_boost[cpu],
-				cur_set->cpufreq_gov.dis_buck_share[cpu]);
-
-		if (cur_set->cpufreq_gov.split_pelt_margin_freq[cpu] == INT_MAX)
-			count += sprintf(msg + count, "    %4d %7s",
-				cur_set->cpufreq_gov.split_pelt_margin[cpu],
-				"INF");
-		else
-			count += sprintf(msg + count, "    %4d %7u",
-				cur_set->cpufreq_gov.split_pelt_margin[cpu],
-				cur_set->cpufreq_gov.split_pelt_margin_freq[cpu]);
-
-		if (cur_set->cpufreq_gov.split_up_rate_limit_freq[cpu] == INT_MAX)
-			count += sprintf(msg + count, "   %4d %7s\n",
-				cur_set->cpufreq_gov.split_up_rate_limit[cpu],
-				"INF");
-		else
-			count += sprintf(msg + count, "   %4d %7u\n",
-				cur_set->cpufreq_gov.split_up_rate_limit[cpu],
-				cur_set->cpufreq_gov.split_up_rate_limit_freq[cpu]);
-	}
-	count += sprintf(msg + count, "\n");
-
-	/* cpuidle gov */
-	count += sprintf(msg + count, "[cpuidle gov]\n");
-	count += sprintf(msg + count, "expired ratio\n");
-	for_each_possible_cpu(cpu) {
-		if (cpu != cpumask_first(cpu_coregroup_mask(cpu)))
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
 			continue;
-		count += sprintf(msg + count, "cpu%d: %4d\n", cpu,
-				cur_set->cpuidle_gov.expired_ratio[cpu]);
+		count += sprintf(msg + count, "cpu%d: %12d  %12d %12d %12d %14d\n", cpu,
+				cur_set->cpufreq_gov.pelt_boost[cpu],
+				cur_set->cpufreq_gov.ptb_min_freq[cpu],
+				cur_set->cpufreq_gov.ptb_margin[cpu],
+				cur_set->cpufreq_gov.window_count[cpu],
+				cur_set->cpufreq_gov.htask_ratio_threshold[cpu]);
 	}
 	count += sprintf(msg + count, "\n");
 
-	/* ontime */
-	count += sprintf(msg + count, "[ontime]\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
-	count += sprintf(msg + count, "\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4d", cur_set->ontime.enabled[group]);
-	count += sprintf(msg + count, "\n\n");
-	{
-		struct ontime_dom *dom;
-
-		count += sprintf(msg + count, "-----------------------------\n");
-		if (!list_empty(cur_set->ontime.p_dom_list)) {
-			list_for_each_entry(dom, cur_set->ontime.p_dom_list, node) {
-				count += sprintf(msg + count, " cpus           :  %*pbl\n",
-					cpumask_pr_args(&dom->cpus));
-				count += sprintf(msg + count, " upper boundary : %4lu (%3d%%)\n",
-					dom->upper_boundary, dom->upper_ratio);
-				count += sprintf(msg + count, " lower boundary : %4lu (%3d%%)\n",
-					dom->lower_boundary, dom->lower_ratio);
-				count += sprintf(msg + count, "-----------------------------\n");
-			}
-		} else  {
-			count += sprintf(msg + count, "list empty!\n");
-			count += sprintf(msg + count, "-----------------------------\n");
-		}
+	/* adap fmax */
+	count += sprintf(msg + count, "[adap-fmax]\n");
+	count += sprintf(msg + count, "     enable    freq\n");
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
+		count += sprintf(msg + count, "cpu%d:%4d %12d\n",
+				cpu, cur_set->cpufreq_gov.adap_fmax_enable[cpu],
+				cur_set->cpufreq_gov.adap_fmax_freq[cpu]);
 	}
 	count += sprintf(msg + count, "\n");
 
-	/* cpus binding */
-	count += sprintf(msg + count, "[cpus binding]\n");
-	for (class = 0; class < NUM_OF_SCHED_CLASS; class++)
-		count += sprintf(msg + count, "%5s", get_sched_class_str(1 << class));
-	count += sprintf(msg + count, "\n");
-	for (class = 0; class < NUM_OF_SCHED_CLASS; class++)
-		count += sprintf(msg + count, "%5d",
-			(cur_set->cpus_binding.target_sched_class & (1 << class) ? 1 : 0));
-	count += sprintf(msg + count, "\n\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
-	count += sprintf(msg + count, "\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4x",
-			*(unsigned int *)cpumask_bits(&cur_set->cpus_binding.mask[group]));
-	count += sprintf(msg + count, "\n\n");
+	count += sprintf(msg + count, "[step flag]\n");
+	count += sprintf(msg + count, "%s : %d\n", "step_latency_enable",
+				cur_set->cpufreq_gov.step_latency_enable);
+	count += sprintf(msg + count, "%s : %d\n", "step_margin_enable",
+				cur_set->cpufreq_gov.step_margin_enable);
 
-	/* tex */
-	count += sprintf(msg + count, "[tex]\n");
-	count += sprintf(msg + count, "prio : %d\n", cur_set->tex.prio);
-	count += sprintf(msg + count, "\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
-	count += sprintf(msg + count, "\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4d", cur_set->tex.enabled[group]);
-	count += sprintf(msg + count, "\n\n");
-
-	/* frt */
-	count += sprintf(msg + count, "[frt]\n");
-	count += sprintf(msg + count, "     active\n");
-	for_each_possible_cpu(cpu)
-		count += sprintf(msg + count, "cpu%d: %4d%%\n",
-				cpu,
-				cur_set->frt.active_ratio[cpu]);
 	count += sprintf(msg + count, "\n");
 
-	/* ecs */
-	count += sprintf(msg + count, "[ecs]\n");
-	{
-		struct ecs_domain *domain;
+	count += sprintf(msg + count, "[step-latency-ns]\n");
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
 
-		count += sprintf(msg + count, "-------------------------\n");
-		if (!list_empty(&cur_set->ecs.domain_list)) {
-			list_for_each_entry(domain, &cur_set->ecs.domain_list, node) {
-				count += sprintf(msg + count, " domain id       : %d\n",
-					domain->id);
-				count += sprintf(msg + count, " threshold ratio : %u\n",
-					domain->busy_threshold_ratio);
-				count += sprintf(msg + count, "-------------------------\n");
-			}
-		} else  {
-			count += sprintf(msg + count, "list empty!\n");
-			count += sprintf(msg + count, "-------------------------\n");
-		}
+		count += sprintf(msg + count, "cpu%d: ", cpu);
+		for(step = 0; step < DEFAULT_LATENCY_STEP; step++)
+			count += sprintf(msg + count, "%8d ",
+				cur_set->cpufreq_gov.step_latency_ns[cpu][step]);
+		count += sprintf(msg + count, "\n");
 	}
-	count += sprintf(msg + count, "     busy_ratio\n");
-	for_each_possible_cpu(cpu)
-		count += sprintf(msg + count, "cpu%d: %4d%%\n",
-				cpu,
-				cur_set->ecs_dynamic.dynamic_busy_ratio[cpu]);
+
 	count += sprintf(msg + count, "\n");
 
-	/* new task util ratio */
-	count += sprintf(msg + count, "[new task util ratio]\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
+	count += sprintf(msg + count, "[step-latency-freq]\n");
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
+
+		count += sprintf(msg + count, "cpu%d: ", cpu);
+		for(step = 0; step < DEFAULT_LATENCY_STEP; step++)
+			count += sprintf(msg + count, "%8d ",
+				cur_set->cpufreq_gov.step_latency_freq[cpu][step]);
+		count += sprintf(msg + count, "\n");
+	}
+
 	count += sprintf(msg + count, "\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4d", cur_set->ntu.ratio[group]);
-	count += sprintf(msg + count, "\n\n");
+	count += sprintf(msg + count, "[step-pelt-margin]\n");
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
+
+		count += sprintf(msg + count, "cpu%d: ", cpu);
+		for (step = 0; step < DEFAULT_MARGIN_STEP; step++)
+			count += sprintf(msg + count, "%8d ",
+				cur_set->cpufreq_gov.step_pelt_margin[cpu][step]);
+		count += sprintf(msg + count, "\n");
+	}
+
+	count += sprintf(msg + count, "\n");
+	count += sprintf(msg + count, "[step-pelt-margin-freq]\n");
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
+
+		count += sprintf(msg + count, "cpu%d: ", cpu);
+		for (step = 0; step < DEFAULT_MARGIN_STEP; step++)
+			count += sprintf(msg + count, "%8d ",
+				cur_set->cpufreq_gov.step_margin_freq[cpu][step]);
+		count += sprintf(msg + count, "\n");
+	}
+
+	count += sprintf(msg + count, "\n");
 
 	/* fclamp */
 	count += sprintf(msg + count, "[fclamp]\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
+	count += print_with_cgroup(msg + count, cur_set->fclamp.monitor_group);
 	count += sprintf(msg + count, "\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4d", cur_set->fclamp.monitor_group[group]);
-	count += sprintf(msg + count, "\n\n");
 	count += sprintf(msg + count, "     |-------- min -------||-------- max -------|\n");
 	count += sprintf(msg + count, "        freq  period ratio    freq  period ratio\n");
 	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
 		count += sprintf(msg + count, "cpu%d: %7d %6d %5d  %7d %6d %5d\n",
 				cpu, cur_set->fclamp.min_freq[cpu],
 				cur_set->fclamp.min_target_period[cpu],
@@ -1599,26 +1641,125 @@ static ssize_t cur_set_read(struct file *file, struct kobject *kobj,
 	}
 	count += sprintf(msg + count, "\n");
 
+	/* cpuidle gov */
+	count += sprintf(msg + count, "[cpuidle gov]\n");
+	count += sprintf(msg + count, "expired ratio\n");
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_clustergroup_mask(cpu)))
+			continue;
+		count += sprintf(msg + count, "cpu%d: %4d\n", cpu,
+				cur_set->cpuidle_gov.expired_ratio[cpu]);
+	}
+	count += sprintf(msg + count, "\n");
+
+	/* cpus binding */
+	count += sprintf(msg + count, "[cpus binding]\n");
+	for_each_cgroup(cgroup)
+		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[cgroup]);
+	count += sprintf(msg + count, "\n");
+	for_each_cgroup(cgroup)
+		count += sprintf(msg + count, "%4x",
+				*(unsigned int *)cpumask_bits(&cur_set->cpus_binding.mask[cgroup]));
+	count += sprintf(msg + count, "\n\n");
+
+	/* ecs */
+	count += sprintf(msg + count, "[ecs]\n");
+	count += sprintf(msg + count, "     %9s  %15s  %15s\n", "busy(%)", "nr_run_up_ratio", "help_misfit_thr");
+	for_each_possible_cpu(cpu) {
+		if (!dynamic_domain_first_cpu(cpu))
+			continue;
+		count += sprintf(msg + count, "cpu%d:%9d  %15d  %15d\n", cpu,
+				cur_set->ecs_dynamic.dynamic_busy_ratio[cpu],
+				cur_set->ecs_dynamic.dynamic_nr_run_up_ratio[cpu],
+				cur_set->ecs_dynamic.dynamic_help_misfit_thr[cpu]);
+	}
+	count += sprintf(msg + count, "min_cpus : %x\n",
+			*(unsigned int *)cpumask_bits(&cur_set->ecs_dynamic.min_cpus));
+	count += sprintf(msg + count, "\n");
+
+	/* gsc */
+	count += sprintf(msg + count, "[gsc]\n");
+	count += sprintf(msg + count, "-----------------------------\n");
+	for (level = GSC_LEVEL1; level < GSC_LEVEL_COUNT; level++) {
+		count += sprintf(msg + count, "level %d\n", level);
+		count += sprintf(msg + count, "up_threshold : %u\n",
+						cur_set->gsc.up_threshold[level]);
+		count += sprintf(msg + count, "down_threshold : %u\n",
+						cur_set->gsc.down_threshold[level]);
+		count += sprintf(msg + count, "-----------------------------\n");
+	}
+
+	count += sprintf(msg + count, "boost_en_threshold : %u\n", cur_set->gsc.boost_en_threshold);
+	count += sprintf(msg + count, "boost_dis_threshold : %u\n", cur_set->gsc.boost_dis_threshold);
+	count += sprintf(msg + count, "boost_ratio: %u\n", cur_set->gsc.boost_ratio);
+	count += sprintf(msg + count, "\n");
+
+	/* high priority threashold */
+	count += sprintf(msg + count, "[high priority threshold]\n");
+	count += print_with_cgroup(msg + count, cur_set->high_prio.threshold);
+	count += sprintf(msg + count, "\n");
+
+	/* new task util ratio */
+	count += sprintf(msg + count, "[new task util ratio]\n");
+	count += print_with_cgroup(msg + count, cur_set->ntu.ratio);
+	count += sprintf(msg + count, "\n");
+
 	/* support uclamp */
 	count += sprintf(msg + count, "[support uclamp]\n");
 	count += sprintf(msg + count, "enabled : %d\n", cur_set->support_uclamp.enabled);
 	count += sprintf(msg + count, "\n");
 
-	/* gsc */
-	count += sprintf(msg + count, "[gsc]\n");
-	count += sprintf(msg + count, "up_threshold : %d\n", cur_set->gsc.up_threshold);
-	count += sprintf(msg + count, "down_threshold : %d\n", cur_set->gsc.down_threshold);
-	count += sprintf(msg + count, "\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4s", task_cgroup_simple_name[group]);
-	count += sprintf(msg + count, "\n");
-	for (group = 0; group < CGROUP_COUNT; group++)
-		count += sprintf(msg + count, "%4d", cur_set->gsc.enabled[group]);
-	count += sprintf(msg + count, "\n\n");
-
 	/* should spread */
 	count += sprintf(msg + count, "[should spread]\n");
 	count += sprintf(msg + count, "enabled : %d\n", cur_set->should_spread.enabled);
+	count += sprintf(msg + count, "\n");
+
+	/* small_task_thr */
+	count += sprintf(msg + count, "[small_task]\n");
+	count += sprintf(msg + count, "small_task_thr : %d\n", cur_set->small_task.small_task_thr);
+	count += sprintf(msg + count, "\n");
+
+	count += sprintf(msg + count, "[frt]\n");
+	count += sprintf(msg + count, "boost\n");
+	count += print_with_cgroup(msg + count, cur_set->frt.boost_enabled);
+	count += sprintf(msg + count, "scale_freq_threshold\n");
+	for_each_possible_cpu(cpu)
+		count += sprintf(msg + count, "cpu%d: %3d\n", cpu, cur_set->frt.scale_freq_threshold[cpu]);
+	count += sprintf(msg + count, "\n");
+
+	/* cgroup boost */
+	count += sprintf(msg + count, "[cgroup_boost]\n");
+	count += print_with_cgroup(msg + count, cur_set->cgroup_boost.enabled);
+	count += sprintf(msg + count, "\n");
+
+	/* energy table */
+	count += sprintf(msg + count, "[energy_table]\n");
+	count += sprintf(msg + count, "default_idx : %d\n", cur_set->et.default_idx);
+	count += sprintf(msg + count, "uarch_selection: %d\n", cur_set->et.uarch_selection);
+	count += sprintf(msg + count, "\n");
+
+	/* util_est enabled */
+	count += sprintf(msg + count, "[util_est enabled]\n");
+	count += print_with_cgroup(msg + count, cur_set->util_est.enabled);
+	count += sprintf(msg + count, "\n");
+
+	/* dslt */
+	count += sprintf(msg + count, "[dslt sensitivity]\n");
+	count += sprintf(msg + count, "runnable-sensitivity\n");
+	count += print_with_cgroup(msg + count, cur_set->dslt.runnable_sensitivity);
+	count += sprintf(msg + count, "running-sensitivity\n");
+	count += print_with_cgroup(msg + count, cur_set->dslt.running_sensitivity);
+	count += sprintf(msg + count, "\n");
+
+#ifdef CONFIG_SCHED_EMS_DSU_SLICE_DOWN
+	/* DSU slice down */
+	count += sprintf(msg + count, "[dsu_slice_down]\n");
+	count += sprintf(msg + count, "enabled : %d\n", cur_set->dsu_slice_down.enabled);
+	count += sprintf(msg + count, "\n");
+#endif
+
+	count += sprintf(msg + count, "[misfit_ratio]\n");
+	count += print_with_cpu_cgroup(msg + count, cur_set->misfit_ratio.ratio);
 	count += sprintf(msg + count, "\n");
 
 	msg_size = min_t(ssize_t, count, MSG_SIZE);
@@ -1628,21 +1769,18 @@ static ssize_t cur_set_read(struct file *file, struct kobject *kobj,
 
 	return msg_size;
 }
-static BIN_ATTR(cur_set, 0440, cur_set_read, NULL, 0);
-
-static DEFINE_MUTEX(task_boost_mutex);
-static int task_boost = 0;
+static BIN_ATTR_RO(cur_set, 0);
 
 static ssize_t task_boost_show(struct device *dev,
-                struct device_attribute *attr, char *buf)
+		struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
 
-	mutex_lock(&task_boost_mutex);
+	mutex_lock(&task_boost.lock);
 
-	ret = sprintf(buf, "%d\n", task_boost);
+	ret = sprintf(buf, "%d\n", task_boost.tid);
 
-	mutex_unlock(&task_boost_mutex);
+	mutex_unlock(&task_boost.lock);
 	return ret;
 }
 
@@ -1666,42 +1804,42 @@ static int get_tid_and_val(int *data, char *buf)
 	return i;
 }
 
-enum {
-	TASK_BOOST_TYPE1 = 1,
-	TASK_BOOST_TYPE2,
-};
-
 static ssize_t task_boost_type1_store(int tid, size_t count)
 {
 	struct task_struct *task;
 
-	if (tid <= 0)
+	if (tid < 0)
 		return -EINVAL;
 
+	task_boost.enabled = false;
+
 	/* clear prev task_boost */
-	if (task_boost != 0) {
-		task = get_pid_task(find_vpid(task_boost), PIDTYPE_PID);
+	if (task_boost.tid != 0) {
+		task = get_pid_task(find_vpid(task_boost.tid), PIDTYPE_PID);
 		if (task) {
-			ems_boosted_tex(task) = 0;
+			ems_boosted_by_user(task) = 0;
 			put_task_struct(task);
 
-			trace_emstune_task_boost(task, 0);
+			trace_emstune_task_boost(task, 0, "task_boost");
 		}
 	}
 
 	/* set task_boost */
 	task = get_pid_task(find_vpid(tid), PIDTYPE_PID);
 	if (task) {
-		ems_boosted_tex(task) = 1;
+		if (task->group_leader == task)
+			task_boost.enabled = true;
+
+		ems_boosted_by_user(task) = 1;
 		put_task_struct(task);
 
-		trace_emstune_task_boost(task, 1);
+		trace_emstune_task_boost(task, 1, "task_boost");
 	}
 
-	task_boost = tid;
+	task_boost.tid = tid;
 
 	return count;
-};
+}
 
 static ssize_t task_boost_type2_store(int tid, int val, size_t count)
 {
@@ -1714,28 +1852,31 @@ static ssize_t task_boost_type2_store(int tid, int val, size_t count)
 	if (!task)
 		return -ENOENT;
 
-	ems_boosted_tex(task) = val;
+	ems_boosted_by_user(task) = val;
 
 	put_task_struct(task);
 
-	trace_emstune_task_boost(task, val);
+	trace_emstune_task_boost(task, val, "task_boost");
 
 	return count;
+}
+
+enum {
+	TASK_BOOST_TYPE1 = 1,
+	TASK_BOOST_TYPE2,
 };
 
 static ssize_t task_boost_store(struct device *dev,
-                struct device_attribute *attr, const char *buf, size_t count)
+		struct device_attribute *attr, const char *buf, size_t count)
 {
 	char arg[100];
 	int data[2] = {-1, -1};
 	int type, ret;
 
-	mutex_lock(&task_boost_mutex);
-
-	if (sscanf(buf, "%99s", arg) != 1) {
-		mutex_unlock(&task_boost_mutex);
+	if (sscanf(buf, "%99s", arg) != 1)
 		return -EINVAL;
-	}
+
+	mutex_lock(&task_boost.lock);
 
 	type = get_tid_and_val(data, arg);
 
@@ -1751,7 +1892,7 @@ static ssize_t task_boost_store(struct device *dev,
 			break;
 	}
 
-	mutex_unlock(&task_boost_mutex);
+	mutex_unlock(&task_boost.lock);
 
 	return ret;
 }
@@ -1766,35 +1907,255 @@ static ssize_t task_boost_del_show(struct device *dev,
 }
 
 static ssize_t task_boost_del_store(struct device *dev,
-                struct device_attribute *attr, const char *buf, size_t count)
+		struct device_attribute *attr, const char *buf, size_t count)
 {
-	int tid;
 	struct task_struct *task;
+	int tid;
 
-	mutex_lock(&task_boost_mutex);
-
-	if (sscanf(buf, "%d", &tid) != 1) {
-		mutex_unlock(&task_boost_mutex);
+	if (sscanf(buf, "%d", &tid) != 1)
 		return -EINVAL;
-	}
+
+	mutex_lock(&task_boost.lock);
 
 	task = get_pid_task(find_vpid(tid), PIDTYPE_PID);
 	if (task) {
-		ems_boosted_tex(task) = 0;
+		ems_boosted_by_user(task) = 0;
 		put_task_struct(task);
+
+		trace_emstune_task_boost(task, 0, "task_boost_del");
 	}
 
 	/* clear task_boost at last task_boost_del */
-	if (task_boost == tid)
-		task_boost = 0;
+	if (task_boost.tid == tid) {
+		task_boost.tid = 0;
+		task_boost.enabled = false;
+	}
 
-	mutex_unlock(&task_boost_mutex);
+	mutex_unlock(&task_boost.lock);
 	return count;
 }
 DEVICE_ATTR_RW(task_boost_del);
 
+static ssize_t low_latency_show(struct device *dev,
+                struct device_attribute *attr, char *buf)
+{
+	int ret = 0;
+
+	return ret;
+}
+
+static ssize_t low_latency_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct task_struct *task;
+	char arg[100];
+	int data[2] = {-1, -1};
+	int tid, val;
+
+	if (sscanf(buf, "%99s", arg) != 1)
+		return -EINVAL;
+
+	mutex_lock(&task_boost.lock);
+
+	if (get_tid_and_val(data, arg) != TASK_BOOST_TYPE2) {
+		mutex_unlock(&task_boost.lock);
+		return -EINVAL;
+	}
+
+	tid = data[0];
+	val = data[1];
+
+	if (tid <= 0 || val < 0) {
+		mutex_unlock(&task_boost.lock);
+		return -EINVAL;
+	}
+
+	task = get_pid_task(find_vpid(tid), PIDTYPE_PID);
+	if (!task) {
+		mutex_unlock(&task_boost.lock);
+		return -ENOENT;
+	}
+
+	ems_low_latency_task(task) = val;
+
+	trace_emstune_task_boost(task, val, "low_latency");
+
+	put_task_struct(task);
+
+	mutex_unlock(&task_boost.lock);
+
+	return count;
+}
+DEVICE_ATTR_RW(low_latency);
+
+#define FIXUP_PATH_LENGTH 512
+
+char capacity_fixup_name[FIXUP_PATH_LENGTH] = "UnityMain";
+unsigned int capacity_fixup_mask = 0;
+unsigned int capacity_fixup_val = 880;
+unsigned int maxfreq_fixup_val = 0;
+
+static ssize_t capacity_fixup_name_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", capacity_fixup_name);
+}
+
+static ssize_t capacity_fixup_name_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	if (sscanf(buf, "%99s", capacity_fixup_name) != 1)
+		return -EINVAL;
+
+	return count;
+}
+DEVICE_ATTR_RW(capacity_fixup_name);
+
+static ssize_t capacity_fixup_mask_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "0x%x\n", capacity_fixup_mask);
+}
+
+static ssize_t capacity_fixup_mask_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int val;
+
+	if (kstrtouint(buf, 16, &val))
+		return -EINVAL;
+
+	capacity_fixup_mask = val;
+
+	return count;
+}
+DEVICE_ATTR_RW(capacity_fixup_mask);
+
+static ssize_t capacity_fixup_val_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", capacity_fixup_val);
+}
+
+static ssize_t capacity_fixup_val_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int val;
+
+	if (sscanf(buf, "%u", &val) != 1)
+		return -EINVAL;
+
+	/* ignore if out of range */
+	if (val < 0 || val > 1024)
+		return -EINVAL;
+
+	capacity_fixup_val = val;
+
+	return count;
+}
+DEVICE_ATTR_RW(capacity_fixup_val);
+
+static ssize_t maxfreq_fixup_val_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", maxfreq_fixup_val);
+}
+
+static ssize_t maxfreq_fixup_val_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int val;
+
+	if (sscanf(buf, "%u", &val) != 1)
+		return -EINVAL;
+
+	/* ignore if out of range */
+	if (val < 0)
+		return -EINVAL;
+
+	maxfreq_fixup_val = val;
+
+	return count;
+}
+DEVICE_ATTR_RW(maxfreq_fixup_val);
+
+static bool check_fixup_name(pid_t pid)
+{
+	bool match = false;
+	struct task_struct *p;
+
+	if (strnlen(capacity_fixup_name, FIXUP_PATH_LENGTH) == 0)
+		return false;
+
+	p = get_pid_task(find_vpid(pid), PIDTYPE_PID);
+	if (!p)
+		return false;
+
+	if (strncmp(p->comm, capacity_fixup_name, FIXUP_PATH_LENGTH) == 0)
+		match = true;
+
+	put_task_struct(p);
+	return match;
+}
+
+void emstune_capacity_fixup(unsigned long *capacity, int cpu)
+{
+	if ((BIT(cpu) & capacity_fixup_mask) && check_fixup_name(current->pid))
+		*capacity = capacity_fixup_val;
+}
+
+void emstune_maxfreq_fixup(unsigned int *max_freq, int cpu)
+{
+	if ((BIT(cpu) & capacity_fixup_mask) && check_fixup_name(current->pid))
+		*max_freq = maxfreq_fixup_val;
+}
+
+void set_maxfreq_fixup_value(struct cpufreq_policy *policy)
+{
+	/* save maximum frequency */
+	if (maxfreq_fixup_val < policy->cpuinfo.max_freq)
+		maxfreq_fixup_val = policy->cpuinfo.max_freq;
+}
+
+void set_capacity_fixup_mask(void)
+{
+	int cpu;
+	int num_clusters = 0;
+	unsigned long max_cap = 0;
+	unsigned long cpus[4] = { 0 };
+	unsigned long caps[4] = { 0 };
+	int i;
+
+	for_each_possible_cpu(cpu) {
+		unsigned long cap = arch_scale_cpu_capacity(cpu);
+
+		if (cap > max_cap) {
+			num_clusters++;
+			cpus[num_clusters - 1] |= BIT(cpu);
+			caps[num_clusters - 1] = cap;
+			max_cap = cap;
+		} else if (cap == max_cap) {
+			cpus[num_clusters - 1] |= BIT(cpu);
+		}
+	}
+
+	capacity_fixup_mask = 0;
+	if (num_clusters > 1) {
+		for (i = 0; i < num_clusters; i++) {
+			if ((caps[0] * 2 < caps[1]) && i == 0)
+				continue;
+
+			if (caps[i] != 1024) {
+				capacity_fixup_mask |= cpus[i];
+			}
+		}
+	}
+}
+
 static struct attribute *emstune_attrs[] = {
 	&dev_attr_sched_boost.attr,
+	&dev_attr_sched_applaunch.attr,
+	&dev_attr_adaptive_cap.attr,
 	&dev_attr_status.attr,
 	&dev_attr_req_mode.attr,
 	&dev_attr_req_level.attr,
@@ -1804,6 +2165,11 @@ static struct attribute *emstune_attrs[] = {
 	&dev_attr_func_list.attr,
 	&dev_attr_task_boost.attr,
 	&dev_attr_task_boost_del.attr,
+	&dev_attr_low_latency.attr,
+	&dev_attr_capacity_fixup_name.attr,
+	&dev_attr_capacity_fixup_mask.attr,
+	&dev_attr_capacity_fixup_val.attr,
+	&dev_attr_maxfreq_fixup_val.attr,
 	NULL,
 };
 
@@ -1818,46 +2184,9 @@ static struct attribute_group emstune_attr_group = {
 	.bin_attrs	= emstune_bin_attrs,
 };
 
-/******************************************************************************
- * initialization                                                             *
- ******************************************************************************/
-static int emstune_mode_backup(void)
-{
-	int i;
-
-	emstune.modes_backup = kzalloc(sizeof(struct emstune_mode)
-					* emstune.mode_count, GFP_KERNEL);
-	if (!emstune.modes_backup)
-		return -ENOMEM;
-
-	/* backup modes */
-	memcpy(emstune.modes_backup, emstune.modes,
-		sizeof(struct emstune_mode) * emstune.mode_count);
-
-	for (i = 0; i < emstune.mode_count; i++) {
-		emstune.modes_backup[i].sets =
-				kzalloc(sizeof(struct emstune_set)
-				* emstune.level_count, GFP_KERNEL);
-		if (!emstune.modes_backup[i].sets)
-			return -ENOMEM;
-
-		/* backup sets */
-		memcpy(emstune.modes_backup[i].sets, emstune.modes[i].sets,
-			sizeof(struct emstune_set) * emstune.level_count);
-	}
-
-	return 0;
-}
-
-static void
-emstune_set_type_init(struct emstune_set *set, int mode, int level)
-{
-	/* init set type */
-	set->type = 0;
-	set->type |= (1 << level);
-	set->type |= (1 << (BEGIN_OF_MODE_TYPE + mode));
-}
-
+/******************************************************************************/
+/* initialization                                                             */
+/******************************************************************************/
 int emstune_cpu_dsu_table_index(void *_set)
 {
 	struct emstune_set *set = (struct emstune_set *)_set;
@@ -1866,19 +2195,57 @@ int emstune_cpu_dsu_table_index(void *_set)
 }
 EXPORT_SYMBOL_GPL(emstune_cpu_dsu_table_index);
 
-static void emstune_perf_table_init(struct emstune_set *set,
-					struct device_node *base_node,
-					struct device_node *set_node)
+static void free_emstune_mode(void)
 {
-	if (!of_property_read_u32(set_node, "cpu-dsu-table-index",
-				&set->cpu_dsu_table_index))
+	int i;
+
+	if (emstune.modes) {
+		for_each_mode(i)
+			kfree(emstune.modes[i].sets);
+		kfree(emstune.modes);
+	}
+
+	if (emstune.backup) {
+		for_each_mode(i)
+			kfree(emstune.backup[i].sets);
+		kfree(emstune.backup);
+	}
+}
+
+static int emstune_mode_backup(void)
+{
+	int mode;
+
+	emstune.backup = kcalloc(emstune.mode_count, sizeof(struct emstune_mode), GFP_KERNEL);
+	if (!emstune.backup)
+		return -ENOMEM;
+
+	memcpy(emstune.backup, emstune.modes, sizeof(struct emstune_mode) * emstune.mode_count);
+
+	for_each_mode(mode) {
+		emstune.backup[mode].sets =
+			kcalloc(emstune.level_count, sizeof(struct emstune_set), GFP_KERNEL);
+		if (!emstune.backup[mode].sets)
+			return -ENOMEM;
+
+		memcpy(emstune.backup[mode].sets, emstune.modes[mode].sets,
+				sizeof(struct emstune_set) * emstune.level_count);
+	}
+
+	return 0;
+}
+
+static void emstune_perf_table_init(struct emstune_set *set,
+		struct device_node *base_node, 	struct device_node *set_node)
+{
+	if (!of_property_read_u32(set_node, "cpu-dsu-table-index", &set->cpu_dsu_table_index))
 		return;
 
-	if (!of_property_read_u32(base_node, "cpu-dsu-table-index",
-				&set->cpu_dsu_table_index))
+	if (!of_property_read_u32(base_node, "cpu-dsu-table-index", &set->cpu_dsu_table_index))
 		return;
 
-	set->cpu_dsu_table_index = 0;	/* 0 = default index */
+	/* 0 = default index */
+	set->cpu_dsu_table_index = 0;
 }
 
 #define parse(_name)							\
@@ -1888,177 +2255,173 @@ static void emstune_perf_table_init(struct emstune_set *set,
 	parse_##_name(child, &set->_name);				\
 	of_node_put(child)
 
-static int emstune_set_init(struct device_node *base_node,
-				struct device_node *set_node,
-				int mode, int level, struct emstune_set *set)
+static void parse_emstune_set(struct device_node *base_node, struct device_node *set_node,
+		struct emstune_set *set)
 {
 	struct device_node *child;
 
-	emstune_set_type_init(set, mode, level);
 	emstune_perf_table_init(set, base_node, set_node);
 
-	parse(specific_energy_table);
-	parse(sched_policy);
-	parse(active_weight);
-	parse(idle_weight);
 	parse(freqboost);
 	parse(cpufreq_gov);
-	parse(cpuidle_gov);
-	parse(ontime);
 	parse(cpus_binding);
-	parse(tex);
-	parse(frt);
-	parse(ecs);
+	parse(high_prio);
 	parse(ecs_dynamic);
 	parse(ntu);
 	parse(fclamp);
 	parse(support_uclamp);
+	parse(small_task);
 	parse(gsc);
 	parse(should_spread);
-
-	return 0;
+	parse(cpuidle_gov);
+	parse(frt);
+	parse(cgroup_boost);
+	parse(et);
+	parse(util_est);
+	parse(dslt);
+#ifdef CONFIG_SCHED_EMS_DSU_SLICE_DOWN
+	parse(dsu_slice_down);
+#endif
+	parse(misfit_ratio);
 }
 
 static void emstune_boot_done(struct work_struct *work)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&emstune_lock, flags);
-	emstune.boot.ongoing = 0;
+	spin_lock_irqsave(&emstune.lock, flags);
+	emstune.boot.ongoing = false;
 	emstune_notify();
-	spin_unlock_irqrestore(&emstune_lock, flags);
+	spin_unlock_irqrestore(&emstune.lock, flags);
 }
 
-static void emstune_boot(void)
+static void parse_boot_set(struct device_node *dn)
 {
-	unsigned long flags;
+       struct device_node *node;
+       unsigned long flags;
 
-	spin_lock_irqsave(&emstune_lock, flags);
-	emstune.boot.ongoing = 1;
-	emstune_notify();
-	spin_unlock_irqrestore(&emstune_lock, flags);
+       node = of_parse_phandle(dn, "boot-set", 0);
+       if (!node) {
+	       emstune_mode_change(0);
+	       return;
+       }
 
-	INIT_DELAYED_WORK(&emstune.boot.work, emstune_boot_done);
-	schedule_delayed_work(&emstune.boot.work, msecs_to_jiffies(40000));
+       emstune.boot.set.mode = 0;
+       emstune.boot.set.level = 0;
+       parse_emstune_set(node, node, &emstune.boot.set);
+       of_node_put(node);
+
+       spin_lock_irqsave(&emstune.lock, flags);
+       emstune.boot.ongoing = true;
+       emstune_notify();
+       spin_unlock_irqrestore(&emstune.lock, flags);
+
+       INIT_DELAYED_WORK(&emstune.boot.work, emstune_boot_done);
+       schedule_delayed_work(&emstune.boot.work, msecs_to_jiffies(40000));
 }
 
-static int emstune_mode_init(struct device_node *dn)
+static int parse_emstune_level(struct device_node *dn, struct emstune_mode *mode, int mode_id)
 {
-	struct device_node *emstune_node, *mode_node, *node;
-	int mode_id, level, ret;
+	struct device_node *child, *base_node, *set_node;
+	int level_id = 0;
 
-	emstune_node = of_get_child_by_name(dn, "emstune");
-	if (!emstune_node)
-		return -EINVAL;
+	emstune.level_count = of_get_child_count(dn);
+	if (!emstune.level_count) {
+		return __LINE__;
+	}
 
-	/* If boost_level does not exist in dt, emstune.boost_level is 0 */
-	of_property_read_u32(emstune_node, "boost-level", &emstune.boost_level);
+	mode->sets = kcalloc(emstune.level_count, sizeof(struct emstune_set), GFP_KERNEL);
+	if (!mode->sets)
+		return __LINE__;
 
-	emstune.mode_count = of_get_child_count(emstune_node);
-	if (!emstune.mode_count)
-		return -ENODATA;
+	for_each_child_of_node(dn, child) {
+		struct emstune_set *set = &mode->sets[level_id];
 
-	emstune.modes = kzalloc(sizeof(struct emstune_mode)
-					* emstune.mode_count, GFP_KERNEL);
+		base_node = of_parse_phandle(child, "base", 0);
+		set_node = of_parse_phandle(child, "set", 0);
+
+		if (!base_node || !set_node) {
+			return __LINE__;
+		}
+
+		set->mode = mode_id;
+		set->level = level_id;
+		parse_emstune_set(base_node, set_node, set);
+
+		of_node_put(base_node);
+		of_node_put(set_node);
+
+		level_id++;
+	}
+
+	return 0;
+}
+
+static int parse_emstune_mode(struct device_node *dn)
+{
+	struct device_node *child;
+	int ret, mode_id = 0;
+
+	emstune.mode_count = of_get_child_count(dn);
+	if (!emstune.mode_count) {
+		return __LINE__;
+	}
+
+	emstune.modes = kcalloc(emstune.mode_count, sizeof(struct emstune_mode), GFP_KERNEL);
 	if (!emstune.modes)
-		return -ENOMEM;
+		return __LINE__;
 
-	mode_id = 0;
-	for_each_child_of_node(emstune_node, mode_node) {
-		struct device_node *level_node;
+	for_each_child_of_node(dn, child) {
 		struct emstune_mode *mode = &emstune.modes[mode_id];
-		struct emstune_set *sets;
-		int level_count;
 
-		if (of_property_read_string(mode_node, "desc", &mode->desc)) {
-			ret = -ENODATA;
-			goto fail;
+		if (of_property_read_string(child, "desc", &mode->desc)) {
+			return __LINE__;
 		}
 
-		level_count = of_get_child_count(mode_node);
-		if (!level_count) {
-			ret = -ENODATA;
-			goto fail;
-		}
+		ret = parse_emstune_level(child, mode, mode_id);
+		if (ret)
+			return ret;
 
-		if (!emstune.level_count)
-			emstune.level_count = level_count;
-		else if (emstune.level_count != level_count) {
-			/* the level count of each mode must be same */
-			ret = -EINVAL;
-			goto fail;
-		}
-
-		sets = kzalloc(sizeof(struct emstune_set)
-					* emstune.level_count, GFP_KERNEL);
-		if (!sets) {
-			ret = -ENOMEM;
-			goto fail;
-		}
-
-		level = 0;
-		for_each_child_of_node(mode_node, level_node) {
-			struct device_node *base_node =
-				of_parse_phandle(level_node, "base", 0);
-			struct device_node *set_node =
-				of_parse_phandle(level_node, "set", 0);
-
-			if (!base_node || !set_node) {
-				ret = -ENODATA;
-				goto fail;
-			}
-
-			ret = emstune_set_init(base_node, set_node,
-						mode_id, level, &sets[level]);
-
-			of_node_put(base_node);
-			of_node_put(set_node);
-
-			if (ret)
-				goto fail;
-
-			level++;
-		}
-
-		mode->sets = sets;
 		mode_id++;
 	}
 
-	/* backup origin emstune */
-	if (emstune_mode_backup())
-		goto fail;
-
-	node = of_parse_phandle(emstune_node, "boot-set", 0);
-	if (node) {
-		emstune_set_init(node, node, 0, 0, &emstune.boot.set);
-		emstune_boot();
-		of_node_put(node);
-	} else
-		emstune_mode_change(0);
-
 	return 0;
-
-fail:
-	for (mode_id = 0; mode_id < emstune.mode_count; mode_id++) {
-		struct emstune_mode *mode = &emstune.modes[mode_id];
-
-		kfree(mode->sets);
-		mode->sets = NULL;
-	}
-
-	kfree(emstune.modes);
-	emstune.modes = NULL;
-
-	return ret;
 }
 
-static int emstune_pm_qos_init(struct device *dev)
+static int parse_emstune(struct device_node *dn)
+{
+	struct device_node *node;
+	int ret;
+
+	node = of_get_child_by_name(dn, "emstune");
+	if (!node)
+		return __LINE__;
+
+	of_property_read_u32(node, "boost-level", &emstune.boost_level);
+
+	ret = parse_emstune_mode(node);
+	if (ret) {
+		free_emstune_mode();
+		return ret;
+	}
+
+	ret = emstune_mode_backup();
+	if (ret) {
+		free_emstune_mode();
+		return ret;
+	};
+
+	parse_boot_set(node);
+
+	return 0;
+}
+
+static int init_emstune_pm_qos(struct device *dev)
 {
 	int ret;
 
 	emstune.nb.notifier_call = emstune_pm_qos_notifier;
-	ret = dev_pm_qos_add_notifier(dev, &emstune.nb,
-					DEV_PM_QOS_MIN_FREQUENCY);
+	ret = dev_pm_qos_add_notifier(dev, &emstune.nb, DEV_PM_QOS_MIN_FREQUENCY);
 	if (ret) {
 		pr_err("Failed to register emstume qos notifier\n");
 		return ret;
@@ -2071,27 +2434,71 @@ static int emstune_pm_qos_init(struct device *dev)
 	return 0;
 }
 
-int emstune_init(struct kobject *ems_kobj, struct device_node *dn,
-						struct device *dev)
+/* This external symbol is for dslt */
+int emstune_get_dslt_running(int cgroup)
+{
+	struct emstune_set *cur_set = get_current_set();
+
+	return cur_set->dslt.running_sensitivity[cgroup];
+}
+EXPORT_SYMBOL_GPL(emstune_get_dslt_running);
+
+int emstune_get_dslt_runnable(int cgroup)
+{
+	struct emstune_set *cur_set = get_current_set();
+
+	return cur_set->dslt.runnable_sensitivity[cgroup];
+}
+EXPORT_SYMBOL_GPL(emstune_get_dslt_runnable);
+
+/* This external symbol is for AMIGO profiler */
+void emstune_set_peltboost(int mode, int level, int cpu, int value) {
+	unsigned long flags;
+	struct emstune_set *set;
+
+	if (is_invalid_mode(mode))
+		return;
+	if (is_invalid_level(level))
+		return;
+	if (is_invalid_cpu(cpu) || !cpu_possible(cpu))
+		return;
+
+	spin_lock_irqsave(&emstune.lock, flags);
+
+	if (emstune.cur_mode == mode && emstune.cur_level == level)
+		ego_update_pelt_boost(cpu, value);
+
+	set = &emstune.modes[mode].sets[level];
+
+	if (set)
+		set_value_coregroup(set->cpufreq_gov.pelt_boost, cpu, value);
+
+	spin_unlock_irqrestore(&emstune.lock, flags);
+}
+EXPORT_SYMBOL_GPL(emstune_set_peltboost);
+
+int emstune_init(struct kobject *ems_kobj, struct device_node *dn, struct device *dev)
 {
 	int ret;
 
-	ret = emstune_mode_init(dn);
+	ret = parse_emstune(dn);
 	if (ret) {
-		WARN(1, "failed to initialize emstune with err=%d\n", ret);
+		WARN(1, "Failed to initialize emstune on line:%d\n", ret);
 		return ret;
 	}
 
-	ret = emstune_pm_qos_init(dev);
+	ret = init_emstune_pm_qos(dev);
 	if (ret) {
 		pr_err("Failed to initialize emstune PM QoS\n");
 		return ret;
 	}
 
 	if (sysfs_create_group(ems_kobj, &emstune_attr_group))
-		pr_err("failed to initialize emstune sysfs\n");
+		pr_err("Failed to initialize emstune sysfs\n");
 
-	aio_tuner_items_init();
+	BUILD_BUG_ON(ARRAY_SIZE(task_cgroup_name) != ARRAY_SIZE(task_cgroup_simple_name));
+
+	ems_adaptive_cap = false;
 
 	return 0;
 }
