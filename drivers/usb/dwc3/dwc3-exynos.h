@@ -120,6 +120,7 @@ struct dwc3_exynos {
 	/* CPU minlock */
 	struct workqueue_struct	*cpufreq_wq;
 	struct work_struct cpufreq_work;
+	struct cpufreq_policy	*cpufreq_policy;
 	struct freq_qos_request qos_req_cpu_cl0;
 
 	bool			usb_data_enabled;
@@ -192,5 +193,5 @@ inline void dwc3_exynos_writel(void __iomem *base, u32 offset, u32 value);
 #if defined(CONFIG_OTG_CDP_SUPPORT)
 void exynos_usbdrd_cdp_set(struct phy *phy, int val);
 #endif
+void dwc3_exynos_cpufreq_setup(struct dwc3_exynos *exynos);
 #endif /* __LINUX_USB_DWC3_EXYNOS_H */
-

@@ -1145,19 +1145,30 @@ static int dwc3_exynos_get_properties(struct dwc3_exynos *exynos)
 	return ret;
 }
 
+/* The policy can appear later; deferring would cost the whole controller. */
+void dwc3_exynos_cpufreq_setup(struct dwc3_exynos *exynos)
+{
+	if (exynos->cpufreq_policy)
+		return;
+
+	exynos->cpufreq_policy = cpufreq_cpu_get(0);
+	if (!exynos->cpufreq_policy)
+		return;
+
+	freq_qos_add_request(&exynos->cpufreq_policy->constraints,
+				&(exynos->qos_req_cpu_cl0),
+				FREQ_QOS_MIN, FREQ_QOS_MIN_DEFAULT_VALUE);
+}
+
 static void dwc3_exynos_init_cpufreq(struct dwc3_exynos *exynos)
 {
-	struct cpufreq_policy *policy;
-
 	pr_info("%s +++\n", __func__);
 
 	exynos->cpufreq_wq = alloc_ordered_workqueue("usb_cpufreq_wq",
 				__WQ_LEGACY | WQ_MEM_RECLAIM | WQ_FREEZABLE);
 	INIT_WORK(&exynos->cpufreq_work, dwc3_otg_cpufreq_work);
 
-	policy = cpufreq_cpu_get(0);
-	freq_qos_add_request(&policy->constraints, &(exynos->qos_req_cpu_cl0),
-				FREQ_QOS_MIN, FREQ_QOS_MIN_DEFAULT_VALUE);
+	dwc3_exynos_cpufreq_setup(exynos);
 }
 
 static int dwc3_exynos_probe(struct platform_device *pdev)
@@ -1187,6 +1198,10 @@ static int dwc3_exynos_probe(struct platform_device *pdev)
 	exynos = devm_kzalloc(dev, sizeof(*exynos), GFP_KERNEL);
 	if (!exynos)
 		return -ENOMEM;
+
+	dwc3_exynos_cpufreq_setup(exynos);
+	if (!exynos->cpufreq_policy)
+		dev_info(dev, "cpufreq is not ready, USB continues without it\n");
 
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(36));
 	if (ret) {
@@ -1395,6 +1410,13 @@ static void dwc3_exynos_remove(struct platform_device *pdev)
 	pr_info("%s\n", __func__);
 
 	dwc3_kretprobe_exit();
+
+	if (exynos->cpufreq_policy) {
+		freq_qos_remove_request(&exynos->qos_req_cpu_cl0);
+		cpufreq_cpu_put(exynos->cpufreq_policy);
+		exynos->cpufreq_policy = NULL;
+	}
+
 	pm_runtime_get_sync(&pdev->dev);
 
 	pm_runtime_put_sync(&pdev->dev);

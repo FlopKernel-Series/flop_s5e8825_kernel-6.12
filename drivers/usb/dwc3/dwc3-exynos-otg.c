@@ -338,6 +338,10 @@ void dwc3_otg_cpufreq_work(struct work_struct *data)
 	struct dwc3_exynos *exynos = g_dwc3_exynos;
 	int perf = exynos->is_perf;
 
+	dwc3_exynos_cpufreq_setup(exynos);
+	if (!exynos->cpufreq_policy)
+		return;
+
 	if (perf) {
 		pr_info("%s Request cluster0 freq to 1632000\n", __func__);
 		freq_qos_update_request(&(exynos->qos_req_cpu_cl0), 1632000);
