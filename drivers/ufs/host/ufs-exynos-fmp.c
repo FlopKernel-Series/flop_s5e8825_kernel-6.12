@@ -314,8 +314,8 @@ void exynos_ufs_fmp_init(struct ufs_hba *hba)
 	hba->caps |= UFSHCD_CAP_CRYPTO;
 
 	/* Advertise crypto quirks to ufshcd-core. */
-	hba->android_quirks |= UFSHCD_QUIRK_CUSTOM_CRYPTO_PROFILE;
-	dev_info(hba->dev, "Exynos FMP quirks: 0x%x\n", hba->android_quirks);
+	hba->quirks |= UFSHCD_QUIRK_CUSTOM_CRYPTO_PROFILE;
+	dev_info(hba->dev, "Exynos FMP quirks: 0x%x\n", hba->quirks);
 
 	/* Advertise crypto capabilities to the block layer. */
 	devm_blk_crypto_profile_init(hba->dev, &hba->crypto_profile, 0);
@@ -659,8 +659,8 @@ void exynos_ufs_fmp_init(struct ufs_hba *hba)
 	hba->caps |= UFSHCD_CAP_CRYPTO;
 
 	/* Advertise crypto quirks to ufshcd-core. */
-	hba->android_quirks |= UFSHCD_QUIRK_CUSTOM_CRYPTO_PROFILE;
-	dev_info(hba->dev, "Exynos FMP quirks: 0x%x\n", hba->android_quirks);
+	hba->quirks |= UFSHCD_QUIRK_CUSTOM_CRYPTO_PROFILE;
+	dev_info(hba->dev, "Exynos FMP quirks: 0x%x\n", hba->quirks);
 
 	/*
 	 * Set data swap mode
@@ -931,8 +931,8 @@ void exynos_ufs_fmp_init(struct ufs_hba *hba)
 	hba->caps |= UFSHCD_CAP_CRYPTO;
 
 	/* Advertise crypto quirks to ufshcd-core. */
-	hba->android_quirks |= UFSHCD_QUIRK_CUSTOM_CRYPTO_PROFILE;
-	dev_info(hba->dev, "Exynos FMP quirks: 0x%x\n", hba->android_quirks);
+	hba->quirks |= UFSHCD_QUIRK_CUSTOM_CRYPTO_PROFILE;
+	dev_info(hba->dev, "Exynos FMP quirks: 0x%x\n", hba->quirks);
 
 	/*
 	 * Set data swap mode
