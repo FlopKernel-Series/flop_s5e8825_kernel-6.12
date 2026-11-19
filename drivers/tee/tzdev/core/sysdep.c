@@ -120,8 +120,13 @@ struct file *sysdep_get_exe_file(struct task_struct *task)
 		return NULL;
 
 	rcu_read_lock();
-	if (!get_file_rcu(&mm->exe_file))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	exe_file = get_file_rcu(&mm->exe_file);
+#else
+	exe_file = rcu_dereference(mm->exe_file);
+	if (exe_file && !get_file_rcu(exe_file))
 		exe_file = NULL;
+#endif
 	rcu_read_unlock();
 	mmput(mm);
 
