@@ -704,6 +704,7 @@ static void __maybe_unused exynos_drm_lastclose(struct drm_device *dev)
 
 static const struct file_operations exynos_drm_driver_fops = {
 	.owner		= THIS_MODULE,
+	.fop_flags	= FOP_UNSIGNED_OFFSET,
 	.open		= drm_open,
 	.mmap		= exynos_drm_gem_mmap,
 	.poll		= drm_poll,
