@@ -34,6 +34,7 @@ struct field {
 
 struct static_power_table {
 	struct thermal_zone_device *tz_dev;
+	int zone_temp;	/* milli degree celsius, refreshed from a workqueue */
 
 	struct field volt;
 	struct field temp;
@@ -92,6 +93,29 @@ static struct dsu_energy_table {
 static const int default_temp = 60;
 
 #define per_cpu_et(cpu)		(*per_cpu_ptr(energy_table, cpu))
+
+#define ET_TEMP_UPDATE_MS	200
+
+/* thermal_zone_get_temp() takes a mutex; the scheduler reads this copy. */
+static void et_temp_work_fn(struct work_struct *work);
+static DECLARE_DELAYED_WORK(et_temp_work, et_temp_work_fn);
+
+static void et_temp_work_fn(struct work_struct *work)
+{
+	int cpu, temp;
+
+	for_each_possible_cpu(cpu) {
+		struct energy_table *table = per_cpu_et(cpu);
+
+		if (!table || !table->spt || !table->spt->tz_dev)
+			continue;
+
+		if (!thermal_zone_get_temp(table->spt->tz_dev, &temp))
+			table->spt->zone_temp = temp;
+	}
+
+	schedule_delayed_work(&et_temp_work, msecs_to_jiffies(ET_TEMP_UPDATE_MS));
+}
 
 static int get_cap_index(struct energy_state *states, int size, unsigned long cap)
 {
@@ -540,7 +564,7 @@ void et_fill_energy_state_cleave(struct cleave_snapshot *csc, struct cpumask *cp
 		return;
 
 	if (table->spt && table->spt->tz_dev) {
-		thermal_zone_get_temp(table->spt->tz_dev, &temp);
+		temp = table->spt->zone_temp;
 		temp = temp < 0 ?  0 : temp / 1000;
 	}
 
@@ -575,7 +599,7 @@ void et_fill_energy_state(struct tp_env *env, struct cpumask *cpus,
 
 	table_index = env->table_index;
 	if (table->spt && table->spt->tz_dev) {
-		thermal_zone_get_temp(table->spt->tz_dev, &temp);
+		temp = table->spt->zone_temp;
 		temp = temp < 0 ?  0 : temp / 1000;
 	}
 
@@ -1295,6 +1319,8 @@ static struct static_power_table *alloc_static_power_table(int row_size, int col
 	struct static_power_table *spt;
 
 	spt = kzalloc(sizeof(struct static_power_table), GFP_KERNEL);
+	if (spt)
+		spt->zone_temp = default_temp * 1000;
 	if (unlikely(!spt))
 		return NULL;
 
@@ -1619,6 +1645,8 @@ int et_init(struct kobject *ems_kobj)
 	sysbusy_register_notifier(&et_sysbusy_notifier);
 
 	sysfs_msg = kcalloc(MSG_SIZE, sizeof(char), GFP_KERNEL);
+
+	schedule_delayed_work(&et_temp_work, 0);
 
 	return ret;
 }

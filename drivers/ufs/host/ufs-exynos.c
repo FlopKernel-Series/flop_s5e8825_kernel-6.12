@@ -38,6 +38,8 @@
 #endif
 
 #include <trace/events/ufs_exynos_perf.h>
+
+#define DATA_UNIT_SIZE		4096
 #if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
 #include <soc/samsung/exynos/debug-snapshot.h>
 #endif
@@ -541,6 +543,8 @@ static int exynos_ufs_init(struct ufs_hba *hba)
 		dev_err(ufs->dev, "Not enable UFS performance mode\n");
 
 	hba->ahit = ufs->ah8_ahit;
+
+	hba->host->dma_alignment = DATA_UNIT_SIZE - 1;
 
 	return 0;
 }
@@ -1531,11 +1535,6 @@ static void exynos_ufs_event_notify(struct ufs_hba *hba,
 #endif
 }
 
-static void exynos_ufs_config_scsi_dev(struct scsi_device *sdev)
-{
-	dma_set_min_align_mask(&sdev->sdev_gendev, SZ_4K - 1);
-}
-
 static struct ufs_hba_variant_ops exynos_ufs_ops = {
 	.init = exynos_ufs_init,
 	.get_ufs_hci_version = exynos_ufs_get_hci_version,
@@ -1555,7 +1554,6 @@ static struct ufs_hba_variant_ops exynos_ufs_ops = {
 	.apply_dev_quirks = __apply_dev_quirks,
 	.fixup_dev_quirks = __fixup_dev_quirks,
 	.device_reset = __device_reset,
-	.config_scsi_dev = exynos_ufs_config_scsi_dev,
 };
 
 /*
