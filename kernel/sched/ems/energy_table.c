@@ -458,6 +458,18 @@ unsigned long et_freq_to_dpower(int cpu, unsigned long freq)
 	return table->default_state[index].dynamic_power;
 }
 
+unsigned long et_freq_to_spower(int cpu, unsigned long freq)
+{
+	struct energy_table *table = per_cpu_et(cpu);
+	int index = get_freq_index(table->default_state, table->nr_states, freq);
+
+	if (index < 0)
+		return 0;
+
+	return table->default_state[index].static_power;
+}
+EXPORT_SYMBOL_GPL(et_freq_to_spower);
+
 unsigned long et_dpower_to_cap(int cpu, unsigned long dpower)
 {
 	struct energy_table *table = per_cpu_et(cpu);
@@ -1538,13 +1550,15 @@ static void init_dsu_data(void)
 	if (!of_property_read_string(np, "pd-cpus", &buf))
 		cpulist_parse(buf, &dsu_table->pd_cpus);
 
-	freq_table = dsufreq_get_freq_table(&size);
+	freq_table = ems_get_dsufreq_table(&size);
+	if (unlikely(!freq_table))
+		return;
 
 	volt_table = kcalloc(size, sizeof(unsigned int), GFP_KERNEL);
 	if (unlikely(!volt_table))
 		return;
 
-	dsufreq_get_volt_table(volt_table);
+	ems_get_dsufreq_volt_table(volt_table, size);
 
 	et_init_dsu_table(freq_table, volt_table, size);
 

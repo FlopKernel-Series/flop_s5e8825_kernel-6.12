@@ -1378,6 +1378,7 @@ extern unsigned long et_cur_cap(int cpu);
 extern unsigned long et_max_cap(int cpu);
 extern unsigned long et_freq_to_cap(int cpu, unsigned long freq);
 extern unsigned long et_freq_to_dpower(int cpu, unsigned long freq);
+extern unsigned long et_freq_to_spower(int cpu, unsigned long freq);
 extern unsigned long et_dpower_to_cap(int cpu, unsigned long dpower);
 extern unsigned long et_dpower_to_freq(int cpu, unsigned long dpower);
 extern void et_update_freq(int cpu, unsigned long freq);
@@ -1646,5 +1647,11 @@ static inline int available_idle_cpu_ems(int cpu)
 
 #undef avaiable_idle_cpu
 #define available_idle_cpu available_idle_cpu_ems
+
+/******************************************************************************
+ * DSU frequency and voltage table
+ ******************************************************************************/
+unsigned long *ems_get_dsufreq_table(int *table_size);
+int ems_get_dsufreq_volt_table(unsigned int *volt_table, int table_size);
 
 #endif	/* ENDIF _KERNEL_SCHED_EMS_H */

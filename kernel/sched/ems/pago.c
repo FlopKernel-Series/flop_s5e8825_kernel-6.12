@@ -1446,7 +1446,7 @@ unsigned int *pago_init_freq_table(struct device_node *dn, struct pago_group *gr
 
 	raw_table_size = of_property_count_u32_elems(dn, "mif-table");
 	if (raw_table_size < 0)
-		temp_table = dsufreq_get_freq_table(&raw_table_size);
+		temp_table = ems_get_dsufreq_table(&raw_table_size);
 
 	raw_table = kcalloc(raw_table_size, sizeof(u32), GFP_KERNEL);
 	if (!raw_table) {
