@@ -532,6 +532,10 @@ bool blk_crypto_fallback_bio_prep(struct bio **bio_ptr)
 
 int blk_crypto_fallback_evict_key(const struct blk_crypto_key *key)
 {
+	/* Nothing to evict before the profile exists. */
+	if (!blk_crypto_fallback_profile)
+		return 0;
+
 	return __blk_crypto_evict_key(blk_crypto_fallback_profile, key);
 }
 
