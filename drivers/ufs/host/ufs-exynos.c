@@ -716,7 +716,7 @@ out:
 
 static void hibern8_enter_stat(struct exynos_ufs *ufs)
 {
-	u32 upmcrs;
+	u32 upmcrs = 0;
 
 	/*
 	 * hibern8 enter results are comprised of upmcrs and uic result,
@@ -726,7 +726,8 @@ static void hibern8_enter_stat(struct exynos_ufs *ufs)
 	 * considers ah8 error as fatal and host reset is asserted subsequently.
 	 * So you don't trust this return value.
 	 */
-	upmcrs = __get_upmcrs(ufs);
+	if (ufs->handle.std)
+		upmcrs = __get_upmcrs(ufs);
 	trace_ufshcd_profile_hibern8(dev_name(ufs->dev), "enter", 0, upmcrs);
 	ufs->hibern8_enter_cnt++;
 	ufs->hibern8_state = UFS_STATE_AH8;
@@ -750,7 +751,8 @@ static int exynos_ufs_setup_clocks(struct ufs_hba *hba, bool on,
 	struct exynos_ufs *ufs = to_exynos_ufs(hba);
 	int ret = 0;
 
-	if (!ufs || !ufs->handle.std)
+	/* handle.std is not set yet, so no register access here. */
+	if (!ufs)
 		return 0;
 
 	if (on) {
