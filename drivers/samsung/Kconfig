@@ -44,3 +44,11 @@ config SEC_KN_WATCH
 		------------------------------------------
 		Secondary | KEY_VOLUMEUP   | KEY_POWER
 		------------------------------------------
+
+config HARD_RESET_HOOK
+	tristate "Enable Samsung hard reset hook"
+	depends on SEC_KEY_NOTIFIER
+	default n
+	help
+	  Samsung TN Hard reset hook. Force warm reset to capture dump
+	  when hold key and power key are pressed together for a while.
