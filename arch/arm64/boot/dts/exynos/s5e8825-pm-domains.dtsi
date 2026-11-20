@@ -16,7 +16,7 @@
 
 / {
 	pd_aud: pd-aud@11862080 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380000>;
 		need_smc = <0x14C10204>;
 		cmu_id = <0x14e00000>;
@@ -27,7 +27,7 @@
 	};
 
 	pd_npus: pd-npus@11862c00 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380002>;
 		need_smc = <0x10B10204>;
 		cmu_id = <0x10B00000>;
@@ -36,7 +36,7 @@
 	};
 
 	pd_dpu: pd-dpu@11862700 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380003>;
 		need_smc = <0x14810204>;
 		cmu_id = <0x14800000>;
@@ -47,7 +47,7 @@
 	};
 
 	pd_m2m: pd-m2m@11862780 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380004>;
 		need_smc = <0x12c10204>;
 		cmu_id = <0x12c00000>;
@@ -56,7 +56,7 @@
 	};
 
 	pd_g3d: pd-g3d@11862820 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380005>;
 		need_smc = <0x10210204>;
 		cmu_id = <0x10200000>;
@@ -65,7 +65,7 @@
 	};
 
 	pd_npu0: pd-npu0@11862b80 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380001>;
 		need_smc = <0x10a10204>;
 		cmu_id = <0x10a00000>;
@@ -75,7 +75,7 @@
 	};
 
 	pd_csis: pd-csis@11862680 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380006>;
 		need_smc = <0x15010204>;
 		cmu_id = <0x15000000>;
@@ -84,7 +84,7 @@
 	};
 
 	pd_isp: pd-isp@11862900 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380007>;
 		need_smc = <0x15410204>;
 		cmu_id = <0x15400000>;
@@ -93,7 +93,7 @@
 	};
 
 	pd_mcsc: pd-mcsc@11862980 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380008>;
 		need_smc = <0x15610204>;
 		cmu_id = <0x15600000>;
@@ -102,7 +102,7 @@
 	};
 
 	pd_mfc: pd-mfc@11862a00 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB1380009>;
 		need_smc = < 0x12E10204>;
 		cmu_id = <0x12E00000>;
@@ -111,7 +111,7 @@
 	};
 
 	pd_vts: pd-vts@11862280 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB138000A>;
 		need_smc = <0x11610204>;
 		cmu_id = <0x11700000>;
@@ -122,7 +122,7 @@
 	};
 
 	pd_usb: pd-usb@11862e00 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB138000B>;
 		need_smc = <0x13010204>;
 		cmu_id = <0x13000000>;
@@ -133,7 +133,7 @@
 	};
 
 	pd_tnr: pd-tnr@11862d80 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB138000C>;
 		need_smc = <0x15310204>;
 		cmu_id = <0x15300000>;
@@ -142,7 +142,7 @@
 	};
 
 	pd_taa: pd-taa@11862d00 {
-		compatible = "samsung,exynos-pd";
+		compatible = "samsung,exynos-pd-sec";
 		cal_id = <0xB138000D>;
 		need_smc = <0x15510204>;
 		cmu_id = <0x15500000>;

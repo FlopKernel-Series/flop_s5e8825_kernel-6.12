@@ -141,7 +141,7 @@
 		clock-output-names = "ext-26m";
 	};
 	mct@10050000 {
-		compatible = "samsung,exynos4210-mct";
+		compatible = "samsung,exynos4210-mct-sec";
 		reg = <0x0 0x10050000 0x800>;
 		interrupt-controller;
 		#interrupt-cells = <1>;
