@@ -2107,6 +2107,8 @@ int abox_tplg_probe(struct snd_soc_component *cmpnt)
 	struct device *dev = cmpnt->dev;
 	struct abox_tplg_firmware *tplg_fw;
 	struct abox_tplg_widget_data *wdata;
+	struct snd_soc_card *card = cmpnt->card;
+	bool saved_route_checks;
 	int i, ret;
 
 	abox_dbg(dev, "%s\n", __func__);
@@ -2139,7 +2141,12 @@ int abox_tplg_probe(struct snd_soc_component *cmpnt)
 
 		abox_info(dev, "loaded %s\n", tplg_fw->fw_name);
 
+		/* The routes target BE widgets the machine links create later. */
+		saved_route_checks = card->disable_route_checks;
+		card->disable_route_checks = true;
 		ret = snd_soc_tplg_component_load(cmpnt, &abox_tplg_ops, tplg_fw->fw);
+		card->disable_route_checks = saved_route_checks;
+
 		if (ret < 0)
 			goto err_load;
 	}
