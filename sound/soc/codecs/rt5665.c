@@ -6321,14 +6321,24 @@ static void rt5665_calibrate(struct rt5665_priv *rt5665)
 	}
 }
 
+/* 20 ms per retry, so this is a 5 s timeout */
+#define RT5665_CALIBRATE_RETRY		250
+
 static void rt5665_calibrate_handler(struct work_struct *work)
 {
 	struct rt5665_priv *rt5665 = container_of(work, struct rt5665_priv,
 		calibrate_work.work);
+	struct snd_soc_card *card = rt5665->component->card;
+	int retry = RT5665_CALIBRATE_RETRY;
 
-	while (!rt5665->component->card->instantiated) {
-		pr_debug("%s\n", __func__);
+	while (!card->instantiated && retry--)
 		msleep(20);
+
+	if (!card->instantiated) {
+		dev_warn(rt5665->component->dev,
+			 "%s: card not instantiated, skip calibration\n",
+			 __func__);
+		return;
 	}
 
 	rt5665_calibrate(rt5665);

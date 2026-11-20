@@ -1634,11 +1634,14 @@ static void exynos8825_mic_always_on(struct snd_soc_card *card)
 }
 #endif
 
+/* Components bind in parallel, so retry before giving up. */
+#define SOUND_CARD_REGISTER_RETRY	60
+
 static void exynos_register_card_work_func(struct work_struct *work)
 {
 	struct snd_soc_card *card = &exynos_sound;
 	struct device *dev = card->dev;
-	int retry = 10, ret;
+	int retry = SOUND_CARD_REGISTER_RETRY, ret;
 
 	dev_info(dev, "%s\n", __func__);
 
@@ -1648,12 +1651,11 @@ static void exynos_register_card_work_func(struct work_struct *work)
 			dev_info(dev, "sound card registered\n");
 			break;
 		}
-		if (ret < 0 && ret != -EPROBE_DEFER) {
-			dev_err(dev, "sound card register fail: %d\n", ret);
-			break;
-		}
+
+		dev_err(dev, "sound card register fail: %d, attempt %d/%d\n",
+				ret, SOUND_CARD_REGISTER_RETRY + 1 - retry,
+				SOUND_CARD_REGISTER_RETRY);
 		fsleep(1 * USEC_PER_SEC);
-		dev_info(dev, "retry sound card register\n");
 	} while (--retry > 0);
 
 	if (ret < 0)
