@@ -1409,6 +1409,9 @@ static int parse_power_seq_data(struct exynos_platform_is_module *pdata, struct 
 					regulator = regulator_get_optional(dev, pin->name);
 					if (IS_ERR_OR_NULL(regulator)) {
 						err("%s: failed to get regulator", (pin->name == 0 ? "null" : pin->name));
+						/* -ENODEV: the rail may not be registered yet. */
+						if (IS_ERR(regulator) && PTR_ERR(regulator) == -ENODEV)
+							return -EPROBE_DEFER;
 						return PTR_ERR(regulator);
 					}
 
