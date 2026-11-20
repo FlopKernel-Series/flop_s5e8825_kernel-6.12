@@ -147,7 +147,8 @@ static int carveout_heap_probe(struct platform_device *pdev)
 	heap->ops = &carveout_heap_ops;
 	ret = samsung_heap_add(heap);
 err_probe:
-	if (ret)
+	/* -EEXIST: another heap owns this memory, do not free it. */
+	if (ret && ret != -EEXIST)
 		carveout_reserved_free(rmem);
 
 	if (ret == -EEXIST) {
