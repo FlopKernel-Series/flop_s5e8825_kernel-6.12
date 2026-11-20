@@ -26,7 +26,7 @@ struct exynos_pm_domain *exynos_pd_lookup_name(const char *domain_name)
 	if (IS_ERR_OR_NULL(domain_name))
 		return NULL;
 
-	for_each_compatible_node(np, NULL, "samsung,exynos-pd") {
+	for_each_compatible_node(np, NULL, "samsung,exynos-pd-sec") {
 		struct platform_device *pdev;
 		struct exynos_pm_domain *pd;
 
@@ -50,7 +50,7 @@ void *exynos_pd_lookup_cmu_id(u32 cmu_id)
 	struct exynos_pm_domain *exypd = NULL;
 	struct device_node *np;
 
-	for_each_compatible_node(np, NULL, "samsung,exynos-pd") {
+	for_each_compatible_node(np, NULL, "samsung,exynos-pd-sec") {
 		struct platform_device *pdev;
 		struct exynos_pm_domain *pd;
 
@@ -518,7 +518,7 @@ static int exynos_pd_probe(struct platform_device *pdev)
 }
 
 static const struct of_device_id of_exynos_pd_match[] = {
-	{ .compatible = "samsung,exynos-pd", },
+	{ .compatible = "samsung,exynos-pd-sec", },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, of_exynos_pd_match);

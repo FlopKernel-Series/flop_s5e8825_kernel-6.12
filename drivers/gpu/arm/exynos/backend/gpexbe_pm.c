@@ -48,7 +48,7 @@ static struct exynos_pm_domain *gpu_get_pm_domain(const char *g3d_genpd_name)
 	struct device_node *np = NULL;
 	struct exynos_pm_domain *pd_temp, *pd = NULL;
 
-	for_each_compatible_node (np, NULL, "samsung,exynos-pd") {
+	for_each_compatible_node (np, NULL, "samsung,exynos-pd-sec") {
 		if (!of_device_is_available(np))
 			continue;
 
