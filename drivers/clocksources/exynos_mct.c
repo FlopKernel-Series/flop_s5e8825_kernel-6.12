@@ -633,6 +633,7 @@ static int exynos4_mct_probe(struct platform_device *pdev)
 }
 
 static const struct of_device_id exynos4_mct_match_table[] = {
+	{ .compatible = "samsung,exynos4210-mct-sec" },
 	{ .compatible = "samsung,exynos4210-mct" },
 	{ .compatible = "samsung,exynos4412-mct" },
 	{ }
