@@ -342,6 +342,11 @@ static struct iommu_domain *samsung_sysmmu_domain_alloc(unsigned int type)
 
 	spin_lock_init(&domain->pgtablelock);
 
+	/* Keep IOVAs inside the range the page tables cover. */
+	domain->domain.geometry.aperture_start = 0;
+	domain->domain.geometry.aperture_end = SYSMMU_VA_SPACE_SIZE - 1;
+	domain->domain.geometry.force_aperture = true;
+
 	return &domain->domain;
 
 err_init_log:
