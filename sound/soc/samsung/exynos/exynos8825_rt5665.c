@@ -1591,8 +1591,6 @@ out:
 	return ret;
 }
 
-SND_SOC_DAILINK_DEF(dailink_comp_dummy, DAILINK_COMP_ARRAY(COMP_DUMMY()));
-
 static int read_codec(struct device_node *np, struct device *dev,
 		struct snd_soc_dai_link *dai_link)
 {
@@ -1600,8 +1598,8 @@ static int read_codec(struct device_node *np, struct device *dev,
 
 	np = of_get_child_by_name(np, "codec");
 	if (!np) {
-		dai_link->codecs = dailink_comp_dummy;
-		dai_link->num_codecs = ARRAY_SIZE(dailink_comp_dummy);
+		dai_link->codecs = &snd_soc_dummy_dlc;
+		dai_link->num_codecs = 1;
 		return 0;
 	}
 
@@ -1745,13 +1743,13 @@ static int exynos_sound_probe(struct platform_device *pdev)
 			link->stream_name = link->name;
 
 		if (!link->cpus) {
-			link->cpus = dailink_comp_dummy;
-			link->num_cpus = ARRAY_SIZE(dailink_comp_dummy);
+			link->cpus = &snd_soc_dummy_dlc;
+			link->num_cpus = 1;
 		}
 
 		if (!link->codecs) {
-			link->codecs = dailink_comp_dummy;
-			link->num_codecs = ARRAY_SIZE(dailink_comp_dummy);
+			link->codecs = &snd_soc_dummy_dlc;
+			link->num_codecs = 1;
 		}
 
 		link->no_pcm = 1;

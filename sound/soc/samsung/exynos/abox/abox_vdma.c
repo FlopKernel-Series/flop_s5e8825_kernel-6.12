@@ -590,7 +590,6 @@ static struct snd_soc_card abox_vdma_card = {
 	.num_links = 0,
 };
 
-SND_SOC_DAILINK_DEF(dailink_comp_dummy, DAILINK_COMP_ARRAY(COMP_DUMMY()));
 
 static void abox_vdma_register_card_work_func(struct work_struct *work)
 {
@@ -606,10 +605,10 @@ static void abox_vdma_register_card_work_func(struct work_struct *work)
 
 		link->name = link->stream_name =
 				kasprintf(GFP_KERNEL, "dummy%d", i);
-		link->cpus = dailink_comp_dummy;
-		link->num_cpus = ARRAY_SIZE(dailink_comp_dummy);
-		link->codecs = dailink_comp_dummy;
-		link->num_codecs = ARRAY_SIZE(dailink_comp_dummy);
+		link->cpus = &snd_soc_dummy_dlc;
+		link->num_cpus = 1;
+		link->codecs = &snd_soc_dummy_dlc;
+		link->num_codecs = 1;
 		link->no_pcm = 1;
 	}
 	abox_register_extra_sound_card(abox_vdma_card.dev, &abox_vdma_card, 1);
@@ -638,16 +637,16 @@ static int abox_vdma_add_dai_link(struct device *dev)
 	kfree(link->name);
 	link->name = link->stream_name = kstrdup(info->name, GFP_KERNEL);
 	link->id = id;
-	link->cpus = dailink_comp_dummy;
-	link->num_cpus = ARRAY_SIZE(dailink_comp_dummy);
+	link->cpus = &snd_soc_dummy_dlc;
+	link->num_cpus = 1;
 	link->platforms = devm_kcalloc(dev, 1, sizeof(*link->platforms),
 			GFP_KERNEL);
 	if (!link->platforms)
 		return -ENOMEM;
 	link->platforms->name = dev_name(dev);
 	link->num_platforms = 1;
-	link->codecs = dailink_comp_dummy;
-	link->num_codecs = ARRAY_SIZE(dailink_comp_dummy);
+	link->codecs = &snd_soc_dummy_dlc;
+	link->num_codecs = 1;
 	link->ignore_suspend = 1;
 	link->ignore_pmdown_time = 1;
 	link->no_pcm = 0;
