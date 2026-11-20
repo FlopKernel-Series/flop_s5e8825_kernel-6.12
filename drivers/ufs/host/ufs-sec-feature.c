@@ -14,6 +14,7 @@
 #include <linux/unaligned.h>
 #include <linux/of.h>
 #include <trace/hooks/ufshcd.h>
+#include <scsi/scsi_devinfo.h>
 #include <linux/panic_notifier.h>
 #include <linux/reboot.h>
 
@@ -1591,10 +1592,16 @@ static void sec_android_vh_ufs_send_tm_command(void *data,
 
 static void sec_android_vh_ufs_update_sdev(void *data, struct scsi_device *sdev)
 {
+	struct ufs_hba *hba = shost_priv(sdev->host);
+
 	blk_queue_rq_timeout(sdev->request_queue, SCSI_UFS_TIMEOUT);
 
 	/* Enable fua write. */
 	sdev->broken_fua = 0;
+
+	/* Stream hints are UFS 4.0 only; older LUs never finish the MODE SENSE. */
+	if (hba->dev_info.wspecversion < 0x0400)
+		sdev->sdev_bflags |= BLIST_SKIP_IO_HINTS;
 }
 
 void ufs_sec_register_vendor_hooks(void)
