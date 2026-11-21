@@ -736,7 +736,7 @@ static bool hx83108_chip_detect(void)
 		if ((tmp_data[3] == 0x83)
 		&& (tmp_data[2] == 0x10)
 		&& ((tmp_data[1] == 0x8a))) {
-			strlcpy((*kp_private_ts)->chip_name,
+			strscpy((*kp_private_ts)->chip_name,
 				HX_83108A_SERIES_PWON, 30);
 			// (*kp_ic_data)->ic_adc_num =
 			// 	hx83108a_data_adc_num;

@@ -1259,7 +1259,7 @@ static bool himax_mcu_check_chip_version(void)
 		I("%s:Read driver IC ID = %X,%X,%X\n", __func__, tmp_data[3], tmp_data[2], tmp_data[1]);
 
 		if ((tmp_data[3] == 0x83) && (tmp_data[2] == 0x10) && (tmp_data[1] == 0x2a)) {
-			strlcpy(private_ts->chip_name, HX_83102A_SERIES_PWON, 30);
+			strscpy(private_ts->chip_name, HX_83102A_SERIES_PWON, 30);
 			ret_data = true;
 			goto END;
 		} else {

@@ -609,7 +609,7 @@ static bool hx83122_chip_detect(void)
 
 		if (tmp_data[3] == 0x83 && tmp_data[2] == 0x12
 		&& (tmp_data[1] == 0x2a)) {
-			strlcpy(private_ts->chip_name,
+			strscpy(private_ts->chip_name,
 				HX_83122A_SERIES_PWON,
 				30);
 

@@ -67,8 +67,8 @@ static void evdev_ib_trigger(struct work_struct* work)
 	spin_unlock(&ib_ev_lock);
 }
 
-static void sec_input_boost_events(struct input_handle *handle,
-			 const struct input_value *vals, unsigned int count) {
+static unsigned int sec_input_boost_events(struct input_handle *handle,
+			 struct input_value *vals, unsigned int count) {
 	int cur_ib_idx;
 
 	spin_lock(&ib_idx_lock);
@@ -84,6 +84,8 @@ static void sec_input_boost_events(struct input_handle *handle,
 		queue_work(ib_unbound_highwq, &(ib_evt_work[cur_ib_idx].evdev_work));
 	}
 	spin_unlock(&ib_idx_lock);
+
+	return count;
 }
 
 static void sec_input_boost_event(struct input_handle *handle,

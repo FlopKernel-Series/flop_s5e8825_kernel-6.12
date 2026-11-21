@@ -1603,7 +1603,7 @@ static int sec_ts_parse_dt(struct i2c_client *client)
 
 	pdata->irq_gpio = of_get_named_gpio(np, "sec,irq_gpio", 0);
 	if (gpio_is_valid(pdata->irq_gpio)) {
-		ret = gpio_request_one(pdata->irq_gpio, GPIOF_DIR_IN, "sec,tsp_int");
+		ret = gpio_request_one(pdata->irq_gpio, GPIOD_IN, "sec,tsp_int");
 		if (ret) {
 			dev_err(&client->dev, "%s: Unable to request tsp_int [%d]\n", __func__, pdata->irq_gpio);
 			return -EINVAL;

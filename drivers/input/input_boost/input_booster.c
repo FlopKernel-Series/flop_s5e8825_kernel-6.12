@@ -622,7 +622,7 @@ int parse_dtsi_str(struct device_node *np, const char *target_node, void *target
 	else
 		str_target_arr_ptr = (char *)target_arr;
 
-	prop_size = strlcpy(prop_str, full_str, sizeof(char)*100);
+	prop_size = strscpy(prop_str, full_str, sizeof(char)*100);
 	prop_pointer = prop_str;
 	token = strsep(&prop_pointer, ",");
 

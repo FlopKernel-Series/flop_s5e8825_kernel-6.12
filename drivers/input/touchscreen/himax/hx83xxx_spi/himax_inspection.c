@@ -1875,7 +1875,7 @@ static int himax_parse_test_file(const struct firmware *file_entry)
 	while (g_hx_head_str[i]) {
 		/*compose header string of .dri file*/
 		for (j = 0; j < 2; j++) {
-			strlcpy(str[j], "[", sizeof(str[j]));
+			strscpy(str[j], "[", sizeof(str[j]));
 			strlcat(str[j], g_hx_head_str[i], sizeof(str[j]));
 			strlcat(str[j], str_tail[j], sizeof(str[j]));
 			/*I("%s string[%d] : %s\n", __func__, j, str[j]);*/

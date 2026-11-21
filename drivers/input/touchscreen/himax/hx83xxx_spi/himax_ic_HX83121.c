@@ -431,7 +431,7 @@ static bool hx83121_chip_detect(void)
 		KI("%s:Read driver IC ID = %X,%X,%X\n", __func__, tmp_data[3], tmp_data[2], tmp_data[1]); /*83,12,1X*/
 
 		if ((tmp_data[3] == 0x83) && (tmp_data[2] == 0x12) && (tmp_data[1] == 0x1a)) {
-			strlcpy(private_ts->chip_name, HX_83121A_SERIES_PWON, 30);
+			strscpy(private_ts->chip_name, HX_83121A_SERIES_PWON, 30);
 
 			ic_data->flash_size = HX83121A_FLASH_SIZE;
 

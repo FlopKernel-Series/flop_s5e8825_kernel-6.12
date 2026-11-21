@@ -177,7 +177,7 @@ static ssize_t gsx_gesture_enable_store(struct goodix_ext_module *module,
 	bool val;
 	int ret;
 
-	ret = strtobool(buf, &val);
+	ret = kstrtobool(buf, &val);
 	if (ret < 0)
 		return ret;
 

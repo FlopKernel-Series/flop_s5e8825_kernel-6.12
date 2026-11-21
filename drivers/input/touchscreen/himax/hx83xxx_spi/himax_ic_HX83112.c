@@ -679,7 +679,7 @@ static bool hx83112_chip_detect(void)
 		if ((tmp_data[3] == 0x83)
 		&& (tmp_data[2] == 0x11)
 		&& ((tmp_data[1] == 0x2f))) {
-			strlcpy((*kp_private_ts)->chip_name,
+			strscpy((*kp_private_ts)->chip_name,
 				HX_83112F_SERIES_PWON, 30);
 			//(*kp_ic_data)->ic_adc_num =
 			//hx83112f_data_adc_num;

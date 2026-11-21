@@ -1612,19 +1612,19 @@ static bool hx83102_chip_detect(void)
 
 		if ((tmp_data[3] == 0x83) && (tmp_data[2] == 0x10) && ((tmp_data[1] == 0x2a) || (tmp_data[1] == 0x2b) || (tmp_data[1] == 0x2d) || (tmp_data[1] == 0x2e) || (tmp_data[1] == 0x29))) {
 			if (tmp_data[1] == 0x2a) {
-				strlcpy(private_ts->chip_name, HX_83102A_SERIES_PWON, 30);
+				strscpy(private_ts->chip_name, HX_83102A_SERIES_PWON, 30);
 				KI("%s:detect IC HX83102A successfully\n", __func__);
 			} else if (tmp_data[1] == 0x2b) {
-				strlcpy(private_ts->chip_name, HX_83102B_SERIES_PWON, 30);
+				strscpy(private_ts->chip_name, HX_83102B_SERIES_PWON, 30);
 				KI("%s:detect IC HX83102B successfully\n", __func__);
 			} else if (tmp_data[1] == 0x2d) {
-				strlcpy(private_ts->chip_name, HX_83102D_SERIES_PWON, 30);
+				strscpy(private_ts->chip_name, HX_83102D_SERIES_PWON, 30);
 				KI("%s:detect IC HX83102D successfully\n", __func__);
 			} else if (tmp_data[1] == 0x29) {
-				strlcpy(private_ts->chip_name, HX_83102J_SERIES_PWON, 30);
+				strscpy(private_ts->chip_name, HX_83102J_SERIES_PWON, 30);
 				KI("%s:detect IC HX83102J successfully\n", __func__);
 			} else {
-				strlcpy(private_ts->chip_name, HX_83102E_SERIES_PWON, 30);
+				strscpy(private_ts->chip_name, HX_83102E_SERIES_PWON, 30);
 				KI("%s:detect IC HX83102E successfully\n", __func__);
 			}
 
