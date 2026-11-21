@@ -1470,7 +1470,7 @@ out:
 	return ret;
 }
 
-int uart_common_remove(struct platform_device *pdev)
+void uart_common_remove(struct platform_device *pdev)
 {
 	struct chip_interface *ci = dev_get_drvdata(&pdev->dev);
 	struct dbmdx_uart_private *p = (struct dbmdx_uart_private *)ci->pdata;
@@ -1487,5 +1487,4 @@ int uart_common_remove(struct platform_device *pdev)
 	uart_close_file(p);
 	kfree(p);
 
-	return 0;
 }

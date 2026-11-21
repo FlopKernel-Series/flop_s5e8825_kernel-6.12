@@ -2136,7 +2136,7 @@ static int exynos_sound_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int exynos_sound_remove(struct platform_device *pdev)
+static void exynos_sound_remove(struct platform_device *pdev)
 {
 	struct snd_soc_card *card;
 	struct madera_drvdata *drvdata;
@@ -2146,11 +2146,11 @@ static int exynos_sound_remove(struct platform_device *pdev)
 
 	card = platform_get_drvdata(pdev);
 	if (!card)
-		return 0;
+		return;
 
 	drvdata = snd_soc_card_get_drvdata(card);
 	if (!drvdata)
-		return 0;
+		return;
 
 	for (dai_link = exynos_dai; dai_link - exynos_dai <
 			ARRAY_SIZE(exynos_dai); dai_link++) {
@@ -2171,7 +2171,6 @@ static int exynos_sound_remove(struct platform_device *pdev)
 		if (drvdata->clk[i])
 			clk_disable_unprepare(drvdata->clk[i]);
 
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

@@ -222,7 +222,7 @@ static int snow_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int snow_remove(struct platform_device *pdev)
+static void snow_remove(struct platform_device *pdev)
 {
 	struct snow_priv *priv = platform_get_drvdata(pdev);
 	struct snd_soc_dai_link *link = &priv->dai_link;
@@ -233,7 +233,6 @@ static int snow_remove(struct platform_device *pdev)
 
 	clk_put(priv->clk_i2s_bus);
 
-	return 0;
 }
 
 static const struct of_device_id snow_of_match[] = {

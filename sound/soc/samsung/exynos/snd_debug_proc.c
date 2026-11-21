@@ -242,7 +242,7 @@ static int snd_debug_proc_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int snd_debug_proc_remove(struct platform_device *pdev)
+static void snd_debug_proc_remove(struct platform_device *pdev)
 {
 	sdp_info.is_enabled = false;
 	sdp_boot.is_enabled = false;
@@ -251,7 +251,6 @@ static int snd_debug_proc_remove(struct platform_device *pdev)
 	remove_proc_entry(SDP_INFO_LOG_NAME, procfs_sdp_dir);
 	remove_proc_entry(SDP_BOOT_LOG_NAME, procfs_sdp_dir);
 	remove_proc_entry(PROC_SDP_DIR, NULL);
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

@@ -765,13 +765,12 @@ static int samsung_abox_vdma_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int samsung_abox_vdma_remove(struct platform_device *pdev)
+static void samsung_abox_vdma_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
 	abox_dbg(dev, "%s\n", __func__);
 
-	return 0;
 }
 
 static void samsung_abox_vdma_shutdown(struct platform_device *pdev)

@@ -331,7 +331,7 @@ err_put_node:
 	return ret;
 }
 
-static int odroid_audio_remove(struct platform_device *pdev)
+static void odroid_audio_remove(struct platform_device *pdev)
 {
 	struct odroid_priv *priv = platform_get_drvdata(pdev);
 
@@ -339,7 +339,6 @@ static int odroid_audio_remove(struct platform_device *pdev)
 	clk_put(priv->sclk_i2s);
 	clk_put(priv->clk_i2s_bus);
 
-	return 0;
 }
 
 static const struct of_device_id odroid_audio_of_match[] = {

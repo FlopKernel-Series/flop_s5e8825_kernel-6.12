@@ -1540,13 +1540,13 @@ err_disable_clk:
 	return ret;
 }
 
-static int samsung_i2s_remove(struct platform_device *pdev)
+static void samsung_i2s_remove(struct platform_device *pdev)
 {
 	struct samsung_i2s_priv *priv = dev_get_drvdata(&pdev->dev);
 
 	/* The secondary device has no driver data assigned */
 	if (!priv)
-		return 0;
+		return;
 
 	pm_runtime_get_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
@@ -1557,7 +1557,6 @@ static int samsung_i2s_remove(struct platform_device *pdev)
 
 	pm_runtime_put_noidle(&pdev->dev);
 
-	return 0;
 }
 
 static const struct samsung_i2s_variant_regs i2sv3_regs = {

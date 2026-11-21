@@ -219,10 +219,9 @@ static int samsung_abox_adaptation_probe(struct platform_device *pdev)
 	return snd_soc_register_platform(&pdev->dev, &abox_adaptation);
 }
 
-static int samsung_abox_adaptation_remove(struct platform_device *pdev)
+static void samsung_abox_adaptation_remove(struct platform_device *pdev)
 {
 	snd_soc_unregister_platform(&pdev->dev);
-	return 0;
 }
 
 static const struct of_device_id samsung_abox_adaptation_match[] = {

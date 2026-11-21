@@ -550,11 +550,10 @@ static int samsung_abox_synchronized_ipc_aw_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int samsung_abox_synchronized_ipc_aw_remove(struct platform_device *pdev)
+static void samsung_abox_synchronized_ipc_aw_remove(struct platform_device *pdev)
 {
 	ipc_dbg(" ");
 
-	return 0;
 }
 
 static const struct of_device_id samsung_abox_synchronized_ipc_aw_match[] = {

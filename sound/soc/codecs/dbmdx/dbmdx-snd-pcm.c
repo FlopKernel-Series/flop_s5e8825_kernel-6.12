@@ -735,14 +735,13 @@ static int dbmdx_pcm_platform_probe(struct platform_device *pdev)
 	return err;
 }
 
-static int dbmdx_pcm_platform_remove(struct platform_device *pdev)
+static void dbmdx_pcm_platform_remove(struct platform_device *pdev)
 {
 	snd_soc_unregister_component(&pdev->dev);
 
 	pr_debug("%s\n", __func__);
 
 
-	return 0;
 }
 
 static const struct of_device_id snd_soc_platform_of_ids[] = {

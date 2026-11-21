@@ -1433,7 +1433,7 @@ static int abox_if_runtime_resume(struct device *dev)
 	return 0;
 }
 
-static int samsung_abox_if_remove(struct platform_device *pdev)
+static void samsung_abox_if_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct abox_if_data *data = dev_get_drvdata(dev);
@@ -1443,7 +1443,6 @@ static int samsung_abox_if_remove(struct platform_device *pdev)
 	abox_if_unregister_irq(data, ABOX_IF_IRQ_MIC_FADE_DONE);
 	abox_if_unregister_irq(data, ABOX_IF_IRQ_SPK_FADE_DONE);
 
-	return 0;
 }
 
 static void samsung_abox_if_shutdown(struct platform_device *pdev)

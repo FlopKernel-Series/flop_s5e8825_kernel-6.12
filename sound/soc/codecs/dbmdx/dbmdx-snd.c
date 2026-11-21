@@ -195,7 +195,7 @@ ERR_CLEAR:
 	return ret;
 }
 
-static int dbmdx_snd_remove(struct platform_device *pdev)
+static void dbmdx_snd_remove(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = platform_get_drvdata(pdev);
 
@@ -203,7 +203,6 @@ static int dbmdx_snd_remove(struct platform_device *pdev)
 
 	dev_info(&pdev->dev, "%s: DBMDX ASoC card unregistered\n", __func__);
 
-	return 0;
 }
 
 static const struct of_device_id snd_dbmdx_of_ids[] = {

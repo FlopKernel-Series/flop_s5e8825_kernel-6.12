@@ -741,7 +741,7 @@ static int sec_audio_sysfs_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int sec_audio_sysfs_remove(struct platform_device *pdev)
+static void sec_audio_sysfs_remove(struct platform_device *pdev)
 {
 	int i;
 
@@ -752,7 +752,6 @@ static int sec_audio_sysfs_remove(struct platform_device *pdev)
 		sysfs_remove_group(&audio_data->amp_dev->kobj,
 			&sec_audio_amp_big_data_attr_group[i]);
 	}
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

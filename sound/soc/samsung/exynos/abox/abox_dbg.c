@@ -1434,13 +1434,12 @@ static int samsung_abox_debug_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int samsung_abox_debug_remove(struct platform_device *pdev)
+static void samsung_abox_debug_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
 	abox_dbg(dev, "%s\n", __func__);
 
-	return 0;
 }
 
 static const struct of_device_id samsung_abox_debug_match[] = {

@@ -2188,7 +2188,7 @@ static int samsung_abox_tplg_probe(struct platform_device *pdev)
 	return snd_soc_register_component(dev, &abox_tplg, NULL, 0);
 }
 
-static int samsung_abox_tplg_remove(struct platform_device *pdev)
+static void samsung_abox_tplg_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct snd_soc_component *cmpnt;
@@ -2207,7 +2207,6 @@ static int samsung_abox_tplg_remove(struct platform_device *pdev)
 	}
 	dev_abox = NULL;
 
-	return 0;
 }
 
 static const struct of_device_id samsung_abox_tplg_match[] = {

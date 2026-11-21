@@ -227,13 +227,12 @@ static int samsung_abox_pci_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int samsung_abox_pci_remove(struct platform_device *pdev)
+static void samsung_abox_pci_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
 	dev_dbg(dev, "%s\n", __func__);
 
-	return 0;
 }
 
 static const struct of_device_id samsung_abox_pci_match[] = {

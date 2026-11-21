@@ -268,7 +268,7 @@ static int samsung_abox_effect_probe(struct platform_device *pdev)
 			0);
 }
 
-static int samsung_abox_effect_remove(struct platform_device *pdev)
+static void samsung_abox_effect_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
@@ -276,7 +276,6 @@ static int samsung_abox_effect_remove(struct platform_device *pdev)
 
 	pm_runtime_disable(dev);
 
-	return 0;
 }
 
 static void samsung_abox_effect_shutdown(struct platform_device *pdev)

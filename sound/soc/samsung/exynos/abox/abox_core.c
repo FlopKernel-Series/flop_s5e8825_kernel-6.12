@@ -776,7 +776,7 @@ static int samsung_abox_core_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int samsung_abox_core_remove(struct platform_device *pdev)
+static void samsung_abox_core_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct abox_core *core = dev_get_drvdata(dev);
@@ -784,7 +784,6 @@ static int samsung_abox_core_remove(struct platform_device *pdev)
 	abox_dbg(dev, "%s\n", __func__);
 	list_del(&core->list);
 
-	return 0;
 }
 
 struct platform_driver samsung_abox_core_driver = {

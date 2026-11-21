@@ -350,7 +350,7 @@ err_clk:
 }
 EXPORT_SYMBOL_GPL(simtec_audio_core_probe);
 
-int simtec_audio_remove(struct platform_device *pdev)
+void simtec_audio_remove(struct platform_device *pdev)
 {
 	struct platform_device *snd_dev = platform_get_drvdata(pdev);
 
@@ -358,7 +358,6 @@ int simtec_audio_remove(struct platform_device *pdev)
 
 	detach_gpio_amp(pdata);
 	clk_put(xtal_clk);
-	return 0;
 }
 EXPORT_SYMBOL_GPL(simtec_audio_remove);
 

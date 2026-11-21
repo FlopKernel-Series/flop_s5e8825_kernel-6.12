@@ -4385,7 +4385,7 @@ static int samsung_abox_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int samsung_abox_remove(struct platform_device *pdev)
+static void samsung_abox_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct abox_data *data = platform_get_drvdata(pdev);
@@ -4403,7 +4403,6 @@ static int samsung_abox_remove(struct platform_device *pdev)
 	snd_soc_unregister_component(dev);
 	abox_iommu_unmap(dev, IOVA_DRAM_FIRMWARE);
 
-	return 0;
 }
 
 static void samsung_abox_shutdown(struct platform_device *pdev)

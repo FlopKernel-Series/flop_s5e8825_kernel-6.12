@@ -457,9 +457,8 @@ static int samsung_vts_dma_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int samsung_vts_dma_remove(struct platform_device *pdev)
+static void samsung_vts_dma_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static const struct of_device_id samsung_vts_dma_match[] = {

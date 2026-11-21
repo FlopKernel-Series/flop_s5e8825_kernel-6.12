@@ -1217,11 +1217,10 @@ error:
 	return ret;
 }
 
-static int samsung_slif_remove(struct platform_device *pdev)
+static void samsung_slif_remove(struct platform_device *pdev)
 {
 	int ret = 0;
 
-	return ret;
 }
 
 static int slif_suspend(struct device *dev)

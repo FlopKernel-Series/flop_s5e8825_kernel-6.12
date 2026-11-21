@@ -16954,13 +16954,12 @@ out:
 	return ret;
 }
 
-static int dbmdx_platform_remove(struct platform_device *pdev)
+static void dbmdx_platform_remove(struct platform_device *pdev)
 {
 	struct dbmdx_private *p = platform_get_drvdata(pdev);
 
 	dbmdx_common_remove(p);
 
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

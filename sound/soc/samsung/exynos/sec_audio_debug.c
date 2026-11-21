@@ -569,7 +569,7 @@ err_data:
 	return ret;
 }
 
-static int sec_audio_debug_remove(struct platform_device *pdev)
+static void sec_audio_debug_remove(struct platform_device *pdev)
 {
 	mutex_destroy(&p_debug_aboxlog_data->abox_log_lock);
 	kfree_const(p_debug_aboxlog_data->buffer);
@@ -584,7 +584,6 @@ static int sec_audio_debug_remove(struct platform_device *pdev)
 	mutex_destroy(&p_debug_data->dbg_lock);
 	kfree(p_debug_data);
 	p_debug_data = NULL;
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

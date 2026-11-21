@@ -2239,10 +2239,9 @@ static int exynos_usb_audio_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int exynos_usb_audio_remove(struct platform_device *pdev)
+static void exynos_usb_audio_remove(struct platform_device *pdev)
 {
 	pr_info("%s\n", __func__);
-	return 0;
 }
 
 static struct platform_driver exynos_usb_audio_driver = {

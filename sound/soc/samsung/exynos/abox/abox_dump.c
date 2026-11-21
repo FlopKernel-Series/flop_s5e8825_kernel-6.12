@@ -1050,14 +1050,13 @@ static int samsung_abox_dump_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int samsung_abox_dump_remove(struct platform_device *pdev)
+static void samsung_abox_dump_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	int id = to_platform_device(dev)->id;
 
 	abox_dbg(dev, "%s[%d]\n", __func__, id);
 
-	return 0;
 }
 
 static void samsung_abox_dump_shutdown(struct platform_device *pdev)

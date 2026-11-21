@@ -259,7 +259,7 @@ static int samsung_mailbox_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int samsung_mailbox_remove(struct platform_device *pdev)
+static void samsung_mailbox_remove(struct platform_device *pdev)
 {
 	struct mailbox_data *mailbox_data = platform_get_drvdata(pdev);
 
@@ -268,7 +268,6 @@ static int samsung_mailbox_remove(struct platform_device *pdev)
 		vts_irq_get_domain_generic_chip(mailbox_data->irq_domain, 0),
 		IRQ_MSK(MAILBOX_INT1_SIZE), 0, 0);
 	irq_domain_remove(mailbox_data->irq_domain);
-	return 0;
 }
 
 static struct platform_driver samsung_mailbox_driver = {

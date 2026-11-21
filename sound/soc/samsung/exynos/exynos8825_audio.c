@@ -1503,7 +1503,7 @@ static int exynos_sound_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int exynos_sound_remove(struct platform_device *pdev)
+static void exynos_sound_remove(struct platform_device *pdev)
 {
 	struct snd_soc_card *card;
 	struct sound_drvdata *drvdata;
@@ -1513,11 +1513,11 @@ static int exynos_sound_remove(struct platform_device *pdev)
 
 	card = platform_get_drvdata(pdev);
 	if (!card)
-		return 0;
+		return;
 
 	drvdata = snd_soc_card_get_drvdata(card);
 	if (!drvdata)
-		return 0;
+		return;
 
 	dev_info(card->dev, "%s\n", __func__);
 
@@ -1538,7 +1538,6 @@ static int exynos_sound_remove(struct platform_device *pdev)
 
 	wakeup_source_unregister(drvdata->ws);
 
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

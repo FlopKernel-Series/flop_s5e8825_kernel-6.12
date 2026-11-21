@@ -3693,7 +3693,7 @@ error:
 	return result;
 }
 
-static int samsung_vts_remove(struct platform_device *pdev)
+static void samsung_vts_remove(struct platform_device *pdev)
 {
 	int i;
 	struct device *dev = &pdev->dev;
@@ -3719,7 +3719,6 @@ static int samsung_vts_remove(struct platform_device *pdev)
 #ifdef EMULATOR
 	iounmap(pmu_alive);
 #endif
-	return 0;
 }
 
 static struct platform_driver samsung_vts_driver = {

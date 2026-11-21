@@ -1140,9 +1140,8 @@ static int samsung_abox_wdma_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int samsung_abox_wdma_remove(struct platform_device *pdev)
+static void samsung_abox_wdma_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static void samsung_abox_wdma_shutdown(struct platform_device *pdev)

@@ -258,14 +258,13 @@ static int samsung_slif_dump_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int samsung_slif_dump_remove(struct platform_device *pdev)
+static void samsung_slif_dump_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	int id = to_platform_device(dev)->id;
 
 	dev_dbg(dev, "%s[%d]\n", __func__, id);
 
-	return 0;
 }
 
 static const struct platform_device_id samsung_slif_dump_driver_ids[] = {

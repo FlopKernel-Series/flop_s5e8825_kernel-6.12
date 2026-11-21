@@ -383,11 +383,10 @@ static int samsung_abox_gic_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int samsung_abox_gic_remove(struct platform_device *pdev)
+static void samsung_abox_gic_remove(struct platform_device *pdev)
 {
 	dev_dbg(&pdev->dev, "%s\n", __func__);
 
-	return 0;
 }
 
 static const struct of_device_id samsung_abox_gic_of_match[] = {

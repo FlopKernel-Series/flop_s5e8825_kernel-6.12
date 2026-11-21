@@ -42,10 +42,9 @@ static int dummy_cpu_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int dummy_cpu_remove(struct platform_device *pdev)
+static void dummy_cpu_remove(struct platform_device *pdev)
 {
 	snd_soc_unregister_component(&pdev->dev);
-	return 0;
 }
 
 static const struct of_device_id dummy_cpu_of_match[] = {

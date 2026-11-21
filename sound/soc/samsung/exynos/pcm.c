@@ -579,7 +579,7 @@ err_dis_cclk:
 	return ret;
 }
 
-static int s3c_pcm_dev_remove(struct platform_device *pdev)
+static void s3c_pcm_dev_remove(struct platform_device *pdev)
 {
 	struct s3c_pcm_info *pcm = &s3c_pcm[pdev->id];
 
@@ -587,7 +587,6 @@ static int s3c_pcm_dev_remove(struct platform_device *pdev)
 	clk_disable_unprepare(pcm->cclk);
 	clk_disable_unprepare(pcm->pclk);
 
-	return 0;
 }
 
 static struct platform_driver s3c_pcm_driver = {
