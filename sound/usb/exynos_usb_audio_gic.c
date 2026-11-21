@@ -64,6 +64,7 @@ static struct exynos_usb_audio usb_audio;
 static struct snd_usb_platform_ops platform_ops;
 static int exynos_usb_audio_unmap_all(void);
 static void exynos_usb_audio_offload_init(void);
+static void usb_probe_notify_resend(void);
 #if IS_ENABLED(CONFIG_USB_XHCI_SIDEBAND) && !IS_ENABLED(CONFIG_SND_EXYNOS_USB_AUDIO_LEGACY)
 static void exynos_usb_audio_offload_store_sideband_info(struct usb_device *udev);
 #endif
@@ -658,6 +659,9 @@ static int exynos_usb_audio_pcm(bool is_open, bool direction)
 
 	if (is_open && g_hwinfo->need_first_probe)
 		exynos_usb_xhci_recover();
+
+	if (is_open && direction == SNDRV_PCM_STREAM_PLAYBACK)
+		usb_probe_notify_resend();
 
 	mutex_lock(&usb_audio.lock);
 
@@ -1754,6 +1758,36 @@ static void exynos_usb_audio_offload_store_hw_info(void)
 	pr_info("<<< %s\n", __func__);
 }
 #endif
+
+/* The connect notices can arrive while the firmware is still booting. */
+static void usb_probe_notify_resend(void)
+{
+	struct hcd_hw_info *hwinfo = g_hwinfo;
+
+	if (!audio_work_data.is_conn)
+		return;
+
+	usb_msg.type = GIC_USB_XHCI;
+	usb_msg.param1 = 0;
+	usb_msg.param2 = hwinfo->slot_id;
+	usb_msg.param3 = lower_32_bits(le64_to_cpu(hwinfo->erst_addr));
+	usb_msg.param4 = upper_32_bits(le64_to_cpu(hwinfo->erst_addr));
+	usb_msg_to_firmware();
+
+	usb_msg.type = GIC_USB_CONN;
+	usb_msg.param1 = 1;
+	usb_msg.param2 = 0;
+	usb_msg.param3 = 0;
+	usb_msg.param4 = 0;
+	usb_msg_to_firmware();
+
+	usb_msg.type = GIC_USB_DESC;
+	usb_msg.param1 = 1;
+	usb_msg.param2 = hwinfo->rawdesc_length;
+	usb_msg.param3 = usb_audio.offset;
+	usb_msg.param4 = usb_audio.speed;
+	usb_msg_to_firmware();
+}
 
 void usb_probe_work(void)
 {
