@@ -1337,7 +1337,7 @@ static void __ufs_resume_async(struct work_struct *work)
 		goto out;
 	}
 
-	ret = ufshcd_bkops_ctrl(hba, hba->urgent_bkops_lvl);
+	ret = ufshcd_bkops_ctrl(hba);
 
 	if (hba->ee_usr_mask)
 		ret = exynos_ufs_write_ee_control(hba);
@@ -1533,7 +1533,7 @@ static void exynos_ufs_event_notify(struct ufs_hba *hba,
 
 static void exynos_ufs_config_scsi_dev(struct scsi_device *sdev)
 {
-	blk_queue_update_dma_alignment(sdev->request_queue, SZ_4K - 1);
+	dma_set_min_align_mask(&sdev->sdev_gendev, SZ_4K - 1);
 }
 
 static struct ufs_hba_variant_ops exynos_ufs_ops = {

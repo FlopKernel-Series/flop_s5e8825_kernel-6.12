@@ -546,7 +546,6 @@ static int verity_handle_data_hash_mismatch(struct dm_verity *v,
 		dm_audit_log_bio(DM_MSG_PREFIX, "verify-data", bio, blkno, 0);
 		return -EIO;
 	}
-#endif
 	return 0;
 }
 

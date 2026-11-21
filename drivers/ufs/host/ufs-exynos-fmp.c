@@ -9,7 +9,7 @@
  *	    Eric Biggers <ebiggers@google.com>
  */
 
-#include <asm/unaligned.h>
+#include <linux/unaligned.h>
 #include <crypto/aes.h>
 #include <crypto/algapi.h>
 #include <soc/samsung/exynos-smc.h>
@@ -314,7 +314,7 @@ void exynos_ufs_fmp_init(struct ufs_hba *hba)
 	hba->caps |= UFSHCD_CAP_CRYPTO;
 
 	/* Advertise crypto quirks to ufshcd-core. */
-	hba->android_quirks |= UFSHCD_ANDROID_QUIRK_CUSTOM_CRYPTO_PROFILE;
+	hba->android_quirks |= UFSHCD_QUIRK_CUSTOM_CRYPTO_PROFILE;
 	dev_info(hba->dev, "Exynos FMP quirks: 0x%x\n", hba->android_quirks);
 
 	/* Advertise crypto capabilities to the block layer. */
@@ -659,7 +659,7 @@ void exynos_ufs_fmp_init(struct ufs_hba *hba)
 	hba->caps |= UFSHCD_CAP_CRYPTO;
 
 	/* Advertise crypto quirks to ufshcd-core. */
-	hba->android_quirks |= UFSHCD_ANDROID_QUIRK_CUSTOM_CRYPTO_PROFILE;
+	hba->android_quirks |= UFSHCD_QUIRK_CUSTOM_CRYPTO_PROFILE;
 	dev_info(hba->dev, "Exynos FMP quirks: 0x%x\n", hba->android_quirks);
 
 	/*
@@ -931,7 +931,7 @@ void exynos_ufs_fmp_init(struct ufs_hba *hba)
 	hba->caps |= UFSHCD_CAP_CRYPTO;
 
 	/* Advertise crypto quirks to ufshcd-core. */
-	hba->android_quirks |= UFSHCD_ANDROID_QUIRK_CUSTOM_CRYPTO_PROFILE;
+	hba->android_quirks |= UFSHCD_QUIRK_CUSTOM_CRYPTO_PROFILE;
 	dev_info(hba->dev, "Exynos FMP quirks: 0x%x\n", hba->android_quirks);
 
 	/*

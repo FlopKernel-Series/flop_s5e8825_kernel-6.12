@@ -7,6 +7,8 @@
 
 #include <linux/ctype.h>
 
+#ifdef SEC_HEX_DEBUG
+
 #define DM_MSG_PREFIX "verity"
 
 #define DM_VERITY_ENV_LENGTH 42
@@ -361,3 +363,5 @@ out:
 MODULE_AUTHOR("Samsung DMV Team");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("DMV debug");
+
+#endif /* SEC_HEX_DEBUG */

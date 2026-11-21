@@ -324,7 +324,7 @@ static void sec_android_mmc_update_mmc_queue(void *data, struct mmc_card *card, 
 	blk_queue_rq_timeout(mq->queue, 20 * HZ);
 
 	if (!host->max_busy_timeout)
-		blk_queue_max_discard_sectors(mq->queue, UINT_MAX);
+		mq->queue->limits.max_discard_sectors = UINT_MAX;
 }
 
 void mmc_sd_sec_register_vendor_hooks(void)

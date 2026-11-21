@@ -11,7 +11,7 @@
 #include "ufs-sec-feature.h"
 #include "ufs-sec-sysfs.h"
 
-#include <asm/unaligned.h>
+#include <linux/unaligned.h>
 #include <linux/of.h>
 #include <trace/hooks/ufshcd.h>
 #include <linux/panic_notifier.h>
@@ -816,7 +816,7 @@ static void ufs_sec_inc_query_error(struct ufs_hba *hba,
 	if (!ufs_sec_is_err_cnt_allowed())
 		return;
 
-	if (is_mcq_enabled(hba)) {
+	if (hba->mcq_enabled) {
 		hwq = hba->dev_cmd_queue;
 		cqe = ufshcd_mcq_cur_cqe(hwq);
 	}

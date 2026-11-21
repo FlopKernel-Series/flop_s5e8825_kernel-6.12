@@ -12,6 +12,8 @@
 
 #include "dm-verity-debug.h"
 
+#ifdef SEC_HEX_DEBUG
+
 #define ALTA_BUF_SIZE 4096
 
 static DEFINE_MUTEX(alta_lock);
@@ -196,3 +198,5 @@ module_exit(alta_bigdata_exit);
 MODULE_AUTHOR("Samsung DMV Team");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("DMV debug");
+
+#endif /* SEC_HEX_DEBUG */
