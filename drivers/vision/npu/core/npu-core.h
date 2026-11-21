@@ -40,6 +40,6 @@ int npu_core_suspend(struct device *dev);
 int npu_core_resume(struct device *dev);
 int npu_core_runtime_suspend(struct device *dev);
 int npu_core_runtime_resume(struct device *dev);
-int npu_core_remove(struct platform_device *pdev);
+void npu_core_remove(struct platform_device *pdev);
 #endif
 #endif // _NPU_CORE_H_

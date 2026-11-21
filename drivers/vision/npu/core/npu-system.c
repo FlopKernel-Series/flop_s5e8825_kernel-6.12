@@ -34,9 +34,11 @@
 //#include <uapi/linux/ion.h>
 #include <linux/samsung/samsung-dma-mapping.h>
 #include <linux/scatterlist.h>
+#include <linux/vmalloc.h>
 #else
 #include <linux/exynos_iovmm.h>
 #include <linux/ion_exynos.h>
+#include <linux/vmalloc.h>
 #endif
 
 #include "npu-log.h"

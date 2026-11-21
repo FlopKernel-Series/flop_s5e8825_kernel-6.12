@@ -147,8 +147,6 @@ static int npu_iommu_fault_handler(struct iommu_fault *fault, void *token)
 static int npu_iommu_set_fault_handler(struct device *dev,
 					struct npu_device *device)
 {	int ret = 0;
-	ret = iommu_register_device_fault_handler(dev,
-				npu_iommu_fault_handler, device);
 
 	return ret;
 }

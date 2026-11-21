@@ -181,7 +181,7 @@ static const struct file_operations vision_fops = {
 	.unlocked_ioctl = vision_ioctl,
 	.compat_ioctl = vision_compat_ioctl32,
 	.poll = vision_poll,
-	.llseek = no_llseek,
+	.llseek = noop_llseek,
 	.flush = vision_flush,
 };
 

@@ -110,8 +110,8 @@ int npu_ver_info(struct npu_device *npu_device, struct vs4l_version *version)
 	version->cmd_version = CONFIG_NPU_COMMAND_VERSION;
 	version->api_version = USER_API_VERSION;
 	version->driver_verion = "Not available";
-	strlcpy(version->fw_version, "Not available", strlen("Not available") + 1);
-	strlcpy(version->fw_hash, "Not available", strlen("Not available") + 1);
+	strscpy(version->fw_version, "Not available", strlen("Not available") + 1);
+	strscpy(version->fw_hash, "Not available", strlen("Not available") + 1);
 
 	return ret;
 }

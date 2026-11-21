@@ -35,6 +35,7 @@
  *****************************************************************************/
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
 #include <linux/dma-heap.h>
+#include <linux/vmalloc.h>
 
 static struct dma_buf *npu_memory_ion_alloc(size_t size, unsigned int flag)
 {
