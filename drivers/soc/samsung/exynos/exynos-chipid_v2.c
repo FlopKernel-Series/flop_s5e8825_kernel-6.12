@@ -549,7 +549,7 @@ free_soc:
 
 static struct platform_driver exynos_chipid_driver = {
 	.driver = {
-		.name = "exynos-chipid",
+		.name = "exynos-chipid-sec",
 		.of_match_table = of_exynos_chipid_ids,
 	},
 	.probe = exynos_chipid_probe,

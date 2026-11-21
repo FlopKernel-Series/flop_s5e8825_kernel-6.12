@@ -529,13 +529,13 @@ static const struct dev_pm_ops exynos_pd_pm_ops = {
 };
 
 static const struct platform_device_id exynos_pd_ids[] = {
-	{ "exynos-pd", },
+	{ "exynos-pd-sec", },
 	{ }
 };
 
 static struct platform_driver exynos_pd_driver = {
 	.driver = {
-		.name = "exynos-pd",
+		.name = "exynos-pd-sec",
 		.of_match_table = of_exynos_pd_match,
 		.pm = &exynos_pd_pm_ops
 	},
