@@ -27,6 +27,7 @@
 #include <videodev2_exynos_camera.h>
 #include <linux/v4l2-mediabus.h>
 #include <linux/bug.h>
+#include <linux/vmalloc.h>
 
 #include "is-core.h"
 #include "is-cmd.h"

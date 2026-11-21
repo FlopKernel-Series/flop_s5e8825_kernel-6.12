@@ -9,10 +9,10 @@
  */
 
 #include <linux/device.h>
-#include <linux/vmalloc.h>
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 #include <linux/firmware.h>
 
 #include "is-binary.h"
@@ -240,7 +240,7 @@ void setup_binary_loader(struct is_binary *bin,
 		bin->free = free;
 	} else {
 		/* set vmalloc/vfree as a default */
-		bin->alloc = &vmalloc;
+		bin->alloc = &vmalloc_noprof;
 		bin->free =  &vfree;
 	}
 
@@ -268,7 +268,7 @@ int request_binary(struct is_binary *bin, const char *path,
 
 	/* whether the loader is customized or not */
 	if (bin->customized != (unsigned long)bin) {
-		bin->alloc = &vmalloc;
+		bin->alloc = &vmalloc_noprof;
 		bin->free =  &vfree;
 	} else {
 		retry_cnt = bin->retry_cnt;

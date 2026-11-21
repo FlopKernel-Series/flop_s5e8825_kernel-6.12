@@ -885,7 +885,7 @@ static const struct file_operations pablo_tuning_fops = {
 	.write		= pablo_tuning_write,
 	.open		= pablo_tuning_open,
 	.release	= pablo_tuning_close,
-	.llseek		= no_llseek,
+	.llseek		= noop_llseek,
 };
 
 struct miscdevice pablo_tuning_device = {

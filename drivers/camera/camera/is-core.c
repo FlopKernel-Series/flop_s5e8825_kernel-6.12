@@ -594,7 +594,6 @@ void is_register_iommu_fault_handler(struct device *dev)
 #ifdef CONFIG_EXYNOS_IOVMM
 	iovmm_set_fault_handler(dev, is_fault_handler, NULL);
 #else
-	iommu_register_device_fault_handler(dev, is_fault_handler, NULL);
 #endif
 #endif
 }

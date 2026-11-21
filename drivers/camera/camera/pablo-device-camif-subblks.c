@@ -10,6 +10,7 @@
  */
 
 #include <linux/of_platform.h>
+#include <linux/of_device.h>
 
 #include "is-hw.h"
 #include "is-debug.h"

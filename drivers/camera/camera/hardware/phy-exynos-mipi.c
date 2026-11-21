@@ -22,6 +22,7 @@
 #include <linux/io.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/consumer.h>
+#include <linux/of_device.h>
 #if IS_ENABLED(CONFIG_EXYNOS_PMU_IF)
 #include <soc/samsung/exynos-pmu-if.h>
 #else
@@ -976,7 +977,7 @@ static int exynos_mipi_phy_configure(struct phy *phy, union phy_configure_opts *
 }
 
 static struct phy *exynos_mipi_phy_of_xlate(struct device *dev,
-					struct of_phandle_args *args)
+					const struct of_phandle_args *args)
 {
 	struct exynos_mipi_phy *state = dev_get_drvdata(dev);
 

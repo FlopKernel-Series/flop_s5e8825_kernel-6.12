@@ -376,7 +376,7 @@ static void mblk_init(struct lib_mem_block *mblk, struct is_priv_buf *pb,
 	mblk->dva_base = CALL_BUFOP(pb, dvaddr, pb);
 	mblk->pb = pb;
 	mblk->end = 0;
-	strlcpy(mblk->name, name, sizeof(mblk->name));
+	strscpy(mblk->name, name, sizeof(mblk->name));
 	mblk->type = type;
 
 	info_lib("memory block %s - kva: 0x%lu, dva: %pad, size: %zu\n",

@@ -62,9 +62,7 @@ static int parse_gate_info(struct exynos_platform_is *pdata, struct device_node 
 	int ret = 0;
 	struct device_node *group_np = NULL;
 	struct device_node *gate_info_np;
-	struct property *prop;
 	struct property *prop2;
-	const __be32 *p;
 	const char *s;
 	u32 i = 0, u = 0;
 	struct exynos_is_clk_gate_info *gate_info;
@@ -79,7 +77,7 @@ static int parse_gate_info(struct exynos_platform_is *pdata, struct device_node 
 	s = NULL;
 	/* get gate register info */
 	prop2 = of_find_property(np, "clk_gate_strs", NULL);
-	of_property_for_each_u32(np, "clk_gate_enums", prop, p, u) {
+	of_property_for_each_u32(np, "clk_gate_enums", u) {
 		printk(KERN_INFO "int value: %d\n", u);
 		s = of_prop_next_string(prop2, s);
 		if (s != NULL) {
@@ -98,19 +96,19 @@ static int parse_gate_info(struct exynos_platform_is *pdata, struct device_node 
 	while ((group_np = of_get_next_child(gate_info_np, group_np))) {
 		struct exynos_is_clk_gate_group *group =
 				&gate_info->groups[i];
-		of_property_for_each_u32(group_np, "mask_clk_on_org", prop, p, u) {
+		of_property_for_each_u32(group_np, "mask_clk_on_org", u) {
 			printk(KERN_INFO "(%d) int1 value: %d\n", i, u);
 			group->mask_clk_on_org |= (1 << u);
 		}
-		of_property_for_each_u32(group_np, "mask_clk_off_self_org", prop, p, u) {
+		of_property_for_each_u32(group_np, "mask_clk_off_self_org", u) {
 			printk(KERN_INFO "(%d) int2 value: %d\n", i, u);
 			group->mask_clk_off_self_org |= (1 << u);
 		}
-		of_property_for_each_u32(group_np, "mask_clk_off_depend", prop, p, u) {
+		of_property_for_each_u32(group_np, "mask_clk_off_depend", u) {
 			printk(KERN_INFO "(%d) int3 value: %d\n", i, u);
 			group->mask_clk_off_depend |= (1 << u);
 		}
-		of_property_for_each_u32(group_np, "mask_cond_for_depend", prop, p, u) {
+		of_property_for_each_u32(group_np, "mask_cond_for_depend", u) {
 			printk(KERN_INFO "(%d) int4 value: %d\n", i, u);
 			group->mask_cond_for_depend |= (1 << u);
 		}

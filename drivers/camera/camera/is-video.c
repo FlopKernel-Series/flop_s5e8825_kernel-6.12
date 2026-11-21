@@ -29,6 +29,7 @@
 #include <linux/videodev2_exynos_media.h>
 #include <linux/dma-buf.h>
 #include <linux/moduleparam.h>
+#include <linux/vmalloc.h>
 
 #include <media/videobuf2-v4l2.h>
 #include <media/videobuf2-core.h>
@@ -3887,7 +3888,7 @@ int is_video_qbuf(struct is_video_ctx *vctx,
 			goto p_err;
 		}
 
-		if (buf->index >= vbq->num_buffers) {
+		if (buf->index >= vb2_get_num_buffers(vbq)) {
 			mverr("buffer index%d out of range", vctx, video, buf->index);
 			ret = -EINVAL;
 			goto p_err;

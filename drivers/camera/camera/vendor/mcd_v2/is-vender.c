@@ -1654,7 +1654,7 @@ int is_vender_request_binary(struct is_binary *bin, const char *path1, const cha
 
 	/* whether the loader is customized or not */
 	if (bin->customized != (unsigned long)bin) {
-		bin->alloc = &vmalloc;
+		bin->alloc = &vmalloc_noprof;
 		bin->free =  &vfree;
 	} else {
 		retry_cnt = bin->retry_cnt;

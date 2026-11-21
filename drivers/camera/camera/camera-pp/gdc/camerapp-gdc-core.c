@@ -25,6 +25,7 @@
 #else
 #include <linux/io.h>
 #include <linux/iommu.h>
+#include <linux/vmalloc.h>
 /* #include <linux/dma-iommu.h> */
 #endif
 
@@ -662,9 +663,9 @@ static int gdc_check_vb2_qbuf(struct vb2_queue *q, struct v4l2_buffer *b)
 		goto q_err;
 	}
 
-	if (b->index >= q->num_buffers) {
+	if (b->index >= vb2_get_num_buffers(q)) {
 		gdc_info("buffer index out of range b_index(%d) q_num_buffers(%d)\n",
-			b->index, q->num_buffers);
+			b->index, vb2_get_num_buffers(q));
 		ret = -EINVAL;
 		goto q_err;
 	}
@@ -2065,7 +2066,7 @@ static int gdc_sysmmu_fault_handler(struct iommu_fault *fault, void *data)
 {
 	struct gdc_dev *gdc = data;
 	struct device *dev = gdc->dev;
-	unsigned long iova = fault->event.addr;
+	unsigned long iova = fault->prm.addr;
 #endif
 	if (test_bit(DEV_RUN, &gdc->state)) {
 		dev_info(dev, "System MMU fault called for IOVA %#lx\n", iova);
@@ -2364,8 +2365,6 @@ static int gdc_probe(struct platform_device *pdev)
 	pm_runtime_put(&pdev->dev);
 #ifdef CONFIG_EXYNOS_IOVMM
 	iovmm_set_fault_handler(&pdev->dev, gdc_sysmmu_fault_handler, gdc);
-#else
-	iommu_register_device_fault_handler(&pdev->dev, gdc_sysmmu_fault_handler, gdc);
 #endif
 	dev_info(&pdev->dev,
 		"Driver probed successfully(version: %08x)\n",
@@ -2390,13 +2389,12 @@ err_wq:
 	return ret;
 }
 
-static int gdc_remove(struct platform_device *pdev)
+static void gdc_remove(struct platform_device *pdev)
 {
 	struct gdc_dev *gdc = platform_get_drvdata(pdev);
 #ifdef CONFIG_EXYNOS_IOVMM
 	iovmm_deactivate(gdc->dev);
 #else
-	iommu_unregister_device_fault_handler(&pdev->dev);
 #endif
 	gdc_clk_put(gdc);
 
@@ -2412,7 +2410,6 @@ static int gdc_remove(struct platform_device *pdev)
 		iommu_unmap(gdc->domain, gdc->votf_src_dest[GDC_DST_ADDR], 0x10000);
 	}
 
-	return 0;
 }
 
 static void gdc_shutdown(struct platform_device *pdev)
