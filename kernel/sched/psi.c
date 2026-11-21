@@ -478,7 +478,7 @@ static void update_triggers(struct psi_group *group, u64 now,
 	 * watchers know when their specified thresholds are exceeded.
 	 */
 	list_for_each_entry(t, triggers, node) {
-		u64 growth;
+		u64 growth = 0;
 		bool new_stall;
 
 		new_stall = aggregator_total[t->state] != total[t->state];
@@ -507,6 +507,7 @@ static void update_triggers(struct psi_group *group, u64 now,
 			continue;
 
 		trace_android_vh_psi_event(t);
+		trace_android_vh_psi_update_triggers(t, now, growth);
 
 		/* Generate an event */
 		if (cmpxchg(&t->event, 0, 1) == 0) {
