@@ -3178,7 +3178,7 @@ err_free:
 }
 
 #if KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE
-static int sm5714_fuelgauge_remove(struct platform_device *pdev)
+static void sm5714_fuelgauge_remove(struct platform_device *pdev)
 #else
 static void sm5714_fuelgauge_remove(struct platform_device *pdev)
 #endif
@@ -3196,7 +3196,7 @@ static void sm5714_fuelgauge_remove(struct platform_device *pdev)
 	kfree(fuelgauge);
 
 #if KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE
-	return 0;
+	return;
 #endif
 }
 

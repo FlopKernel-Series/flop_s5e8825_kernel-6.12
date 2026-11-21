@@ -297,7 +297,7 @@ static const struct file_operations sec_bat_misc_fops = {
 	.owner		= THIS_MODULE,
 	.open		= sec_bat_misc_open,
 	.release	= sec_bat_misc_close,
-	.llseek		= no_llseek,
+	.llseek		= noop_llseek,
 	.unlocked_ioctl = sec_bat_misc_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = sec_bat_misc_compat_ioctl,

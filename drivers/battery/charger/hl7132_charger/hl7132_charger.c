@@ -72,7 +72,7 @@ static void _hl7132_log(struct hl7132_charger *chg, const char *fmt,
 
 	if (hl7132_log_full(chg)) {
 		chg->logbuffer_head = max(chg->logbuffer_head - 1, 0);
-		strlcpy(tmpbuffer, "overflow", sizeof(tmpbuffer));
+		strscpy(tmpbuffer, "overflow", sizeof(tmpbuffer));
 	}
 
 	if (chg->logbuffer_head < 0 || chg->logbuffer_head >= LOG_BUFFER_ENTRIES) {
