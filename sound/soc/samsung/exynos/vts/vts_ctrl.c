@@ -1246,7 +1246,7 @@ static void hw_param_interval_set(struct snd_pcm_hw_params *params,
 
 int vts_hw_params_fixup_helper(struct snd_soc_pcm_runtime *rtd, struct snd_pcm_hw_params *params)
 {
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	unsigned int rate, channels, width, pwidth, period_size, period_count, buffer_size;
 	snd_pcm_format_t format;

@@ -116,7 +116,7 @@ int abox_vdma_period_elapsed(struct abox_vdma_info *info,
 static int abox_vdma_open(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	struct abox_vdma_rtd *rtd = abox_vdma_get_rtd(info, substream->stream);
@@ -140,7 +140,7 @@ static int abox_vdma_open(struct snd_soc_component *component,
 static int abox_vdma_close(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	struct abox_vdma_rtd *rtd = abox_vdma_get_rtd(info, substream->stream);
@@ -162,7 +162,7 @@ static int abox_vdma_hw_params(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *params)
 {
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	struct abox_vdma_rtd *rtd = abox_vdma_get_rtd(info, substream->stream);
@@ -216,7 +216,7 @@ static int abox_vdma_hw_params(struct snd_soc_component *component,
 static int abox_vdma_hw_free(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	struct device *dev = info->dev;
@@ -236,7 +236,7 @@ static int abox_vdma_hw_free(struct snd_soc_component *component,
 static int abox_vdma_prepare(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	struct abox_vdma_rtd *rtd = abox_vdma_get_rtd(info, substream->stream);
@@ -258,7 +258,7 @@ static int abox_vdma_prepare(struct snd_soc_component *component,
 static int abox_vdma_trigger(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream, int cmd)
 {
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	struct device *dev = info->dev;
@@ -297,7 +297,7 @@ static int abox_vdma_trigger(struct snd_soc_component *component,
 static snd_pcm_uframes_t abox_vdma_pointer(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	struct abox_vdma_rtd *rtd = abox_vdma_get_rtd(info, substream->stream);
@@ -322,7 +322,7 @@ static int abox_vdma_mmap(struct snd_soc_component *component,
 		struct vm_area_struct *vma)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	struct abox_vdma_rtd *rtd = abox_vdma_get_rtd(info, substream->stream);
@@ -342,7 +342,7 @@ static int abox_vdma_copy_user_dma_area(struct snd_pcm_substream *substream,
 		unsigned long bytes)
 {
 	struct snd_pcm_runtime *pcm_rtd = substream->runtime;
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	unsigned long copy_bytes;
@@ -372,7 +372,7 @@ static int abox_vdma_copy_user(struct snd_soc_component *component,
 		unsigned long pos, struct iov_iter *iter, unsigned long bytes)
 {
 	struct snd_pcm_runtime *pcm_rtd = substream->runtime;
-	struct snd_soc_pcm_runtime *soc_rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *soc_rtd = snd_soc_substream_to_rtd(substream);
 	int id = soc_rtd->dai_link->id;
 	struct abox_vdma_info *info = abox_vdma_get_info(id);
 	struct device *dev = info->dev;
@@ -703,7 +703,7 @@ struct device *abox_vdma_register_component(struct device *dev,
 
 	info->id = id;
 	info->legacy = false;
-	strlcpy(info->name, name, sizeof(info->name));
+	strscpy(info->name, name, sizeof(info->name));
 
 	if (playback) {
 		rtd = abox_vdma_get_rtd(info, SNDRV_PCM_STREAM_PLAYBACK);

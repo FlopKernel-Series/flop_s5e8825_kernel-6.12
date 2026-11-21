@@ -57,8 +57,8 @@ static const struct snd_pcm_hardware vts_dma_hardware = {
 static struct vts_dma_data *vts_get_drvdata(
 	struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct snd_soc_dai_driver *dai_drv = dai->driver;
 	struct vts_data *data =
 		dev_get_drvdata(dai->dev);
@@ -72,8 +72,8 @@ static int vts_dma_hw_params(struct snd_soc_component *component,
 	struct snd_pcm_substream *substream,
 	struct snd_pcm_hw_params *params)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct vts_dma_data *data = vts_get_drvdata(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
@@ -105,8 +105,8 @@ static int vts_dma_hw_params(struct snd_soc_component *component,
 static int vts_dma_hw_free(struct snd_soc_component *component,
 	struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct vts_dma_data *data = vts_get_drvdata(substream);
 
@@ -126,8 +126,8 @@ static int vts_dma_hw_free(struct snd_soc_component *component,
 static int vts_dma_prepare(struct snd_soc_component *component,
 	struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct vts_dma_data *data = vts_get_drvdata(substream);
 
@@ -147,8 +147,8 @@ static int vts_dma_prepare(struct snd_soc_component *component,
 static int vts_dma_trigger(struct snd_soc_component *component,
 	struct snd_pcm_substream *substream, int cmd)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct vts_dma_data *data = vts_get_drvdata(substream);
 	u32 values[3] = {0, 0, 0};
@@ -201,8 +201,8 @@ static snd_pcm_uframes_t vts_dma_pointer(
 	struct snd_soc_component *component,
 	struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct vts_dma_data *data = vts_get_drvdata(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
@@ -215,8 +215,8 @@ static snd_pcm_uframes_t vts_dma_pointer(
 static int vts_dma_open(struct snd_soc_component *component,
 	struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct vts_dma_data *data = vts_get_drvdata(substream);
 	int result = 0;
@@ -260,8 +260,8 @@ static int vts_dma_open(struct snd_soc_component *component,
 static int vts_dma_close(struct snd_soc_component *component,
 	struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct vts_dma_data *data = vts_get_drvdata(substream);
 	int result = 0;
@@ -295,8 +295,8 @@ static int vts_dma_mmap(struct snd_soc_component *component,
 	struct snd_pcm_substream *substream,
 	struct vm_area_struct *vma)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 
@@ -312,8 +312,8 @@ static int vts_dma_copy_user(struct snd_soc_component *component,
 	struct snd_pcm_substream *substream,
 	int channel, unsigned long pos, struct iov_iter *iter, unsigned long bytes)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	void *hwbuf;
@@ -334,7 +334,7 @@ static int vts_dma_copy_user(struct snd_soc_component *component,
 static int vts_dma_new(struct snd_soc_component *component,
 	struct snd_soc_pcm_runtime *runtime)
 {
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(runtime, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(runtime, 0);
 	struct snd_soc_dai_driver *dai_drv = dai->driver;
 	struct device *dev = dai->dev;
 

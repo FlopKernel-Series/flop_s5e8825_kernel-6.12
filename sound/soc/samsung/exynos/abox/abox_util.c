@@ -14,6 +14,7 @@
 #include <linux/io.h>
 #include <linux/of.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 #include <sound/pcm.h>
 
 #include "abox_util.h"

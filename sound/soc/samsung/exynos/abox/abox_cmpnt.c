@@ -3120,7 +3120,7 @@ static struct snd_soc_dai *find_dai(struct snd_soc_card *card, enum abox_dai id)
 	struct snd_soc_dai *cpu_dai;
 
 	list_for_each_entry(rtd, &card->rtd_list, list) {
-		cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+		cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 		if (cpu_dai->id == id)
 			return cpu_dai;
 	}
@@ -3557,7 +3557,7 @@ static int rdma_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	struct snd_pcm_hw_params _params = *params;
 	struct snd_soc_dai *cpu_dai;
 
-	cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	rdma_hw_params_fixup(cpu_dai, &_params);
 	return abox_dma_hw_params_fixup(cpu_dai->dev, params);
 }
@@ -3568,7 +3568,7 @@ static int wdma_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	struct snd_pcm_hw_params _params = *params;
 	struct snd_soc_dai *cpu_dai;
 
-	cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	wdma_hw_params_fixup(cpu_dai, &_params);
 	return abox_dma_hw_params_fixup(cpu_dai->dev, params);
 }
@@ -7606,7 +7606,7 @@ int abox_cmpnt_update_cnt_val(struct device *adev)
 int abox_cmpnt_hw_params_fixup_helper(struct snd_soc_pcm_runtime *rtd,
 		struct snd_pcm_hw_params *params)
 {
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct device *dev = dai->dev;
 	struct abox_data *data;
 	int ret;

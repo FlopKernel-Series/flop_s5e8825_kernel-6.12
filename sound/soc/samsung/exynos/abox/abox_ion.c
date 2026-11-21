@@ -110,7 +110,7 @@ static int abox_ion_hwdep_mmap(struct snd_hwdep *hw, struct file *file,
 int abox_ion_new_hwdep(struct snd_soc_pcm_runtime *rtd,
 		struct abox_ion_buf *buf, struct snd_hwdep **hwdep)
 {
-	struct device *dev = asoc_rtd_to_cpu(rtd, 0)->dev;
+	struct device *dev = snd_soc_rtd_to_cpu(rtd, 0)->dev;
 	char *id;
 	int device = rtd->pcm->device;
 	int ret;

@@ -585,7 +585,7 @@ void abox_dump_period_elapsed(int id, size_t pointer)
 static int abox_dump_open(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	int id = rtd->dai_link->id;
 	struct abox_dump_info *info = abox_dump_get_info(id);
 	struct device *dev = info->dev;
@@ -611,7 +611,7 @@ static int abox_dump_open(struct snd_soc_component *component,
 static int abox_dump_close(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	int id = rtd->dai_link->id;
 	struct abox_dump_info *info = abox_dump_get_info(id);
 	struct device *dev = info->dev;
@@ -628,7 +628,7 @@ static int abox_dump_hw_params(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *params)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	int id = rtd->dai_link->id;
 	struct abox_dump_info *info = abox_dump_get_info(id);
 	struct device *dev = info->dev;
@@ -641,7 +641,7 @@ static int abox_dump_hw_params(struct snd_soc_component *component,
 static int abox_dump_hw_free(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	int id = rtd->dai_link->id;
 	struct abox_dump_info *info = abox_dump_get_info(id);
 	struct device *dev = info->dev;
@@ -654,7 +654,7 @@ static int abox_dump_hw_free(struct snd_soc_component *component,
 static int abox_dump_prepare(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	int id = rtd->dai_link->id;
 	struct abox_dump_info *info = abox_dump_get_info(id);
 	struct device *dev = info->dev;
@@ -669,7 +669,7 @@ static int abox_dump_prepare(struct snd_soc_component *component,
 static int abox_dump_trigger(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream, int cmd)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	int id = rtd->dai_link->id;
 	struct abox_dump_info *info = abox_dump_get_info(id);
 	struct device *dev = info->dev;
@@ -718,7 +718,7 @@ void abox_dump_transfer(int id, const char *buf, size_t bytes)
 static snd_pcm_uframes_t abox_dump_pointer(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	int id = rtd->dai_link->id;
 	struct abox_dump_info *info = abox_dump_get_info(id);
 	struct device *dev = info->dev;
@@ -919,7 +919,7 @@ int abox_dump_register(struct abox_data *data, int gid, int id,
 	info->c_gid = gid;
 	info->c_id = id;
 	info->id = abox_dump_allocate_id(info->c_gid, info->c_id);
-	strlcpy(info->name, name, sizeof(info->name));
+	strscpy(info->name, name, sizeof(info->name));
 	info->buffer.area = area;
 	info->buffer.addr = addr;
 	info->buffer.bytes = bytes;

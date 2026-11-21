@@ -28,6 +28,7 @@
 #include <linux/pinctrl/consumer.h>
 #include <linux/suspend.h>
 #include <linux/panic_notifier.h>
+#include <linux/vmalloc.h>
 
 #include <asm-generic/delay.h>
 

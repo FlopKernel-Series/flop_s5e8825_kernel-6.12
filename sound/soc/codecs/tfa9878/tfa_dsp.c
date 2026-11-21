@@ -4460,7 +4460,7 @@ enum tfa98xx_error tfa_run_startup(struct tfa_device *tfa, int profile)
 	}
 
 	/* Go to the initCF state */
-	strlcpy(prof_name, tfa_cont_profile_name(tfa->cnt,
+	strscpy(prof_name, tfa_cont_profile_name(tfa->cnt,
 		tfa->dev_idx, profile), MAX_CONTROL_NAME);
 	tfa_dev_set_state(tfa, TFA_STATE_INIT_CF,
 		strnstr(prof_name, ".cal", strlen(prof_name)) != NULL);
@@ -5351,7 +5351,7 @@ enum tfa_error tfa_dev_start(struct tfa_device *tfa,
 	/* If the profile contains the .standby suffix go
 	 * to powerdown else we should be in operating state
 	 */
-	strlcpy(prof_name, tfa_cont_profile_name(tfa->cnt,
+	strscpy(prof_name, tfa_cont_profile_name(tfa->cnt,
 		tfa->dev_idx, next_profile), MAX_CONTROL_NAME);
 	if (strnstr(prof_name, ".standby", strlen(prof_name)) != NULL) {
 		tfa_dev_set_swprof(tfa, (unsigned short)next_profile);
@@ -5614,7 +5614,7 @@ enum tfa_error tfa_dev_switch_profile(struct tfa_device *tfa,
 	/* If the profile contains the .standby suffix go
 	 * to powerdown else we should be in operating state
 	 */
-	strlcpy(prof_name, tfa_cont_profile_name(tfa->cnt,
+	strscpy(prof_name, tfa_cont_profile_name(tfa->cnt,
 		tfa->dev_idx, next_profile), MAX_CONTROL_NAME);
 	if (strnstr(prof_name, ".standby", strlen(prof_name)) != NULL) {
 		tfa_dev_set_swprof(tfa, (unsigned short)next_profile);
@@ -7507,7 +7507,7 @@ int tfa_plop_noise_interrupt(struct tfa_device *tfa,
 			 * Since NOCLK interrupt is only enabled for 72
 			 * it does not harm normal flow!
 			 */
-			strlcpy(prof_name, tfa_cont_profile_name(tfa->cnt,
+			strscpy(prof_name, tfa_cont_profile_name(tfa->cnt,
 				tfa->dev_idx, profile), MAX_CONTROL_NAME);
 			if (strnstr(prof_name, ".saam", strlen(prof_name))) {
 				pr_info("Powering down from a SAAM profile, workaround PLMA4766 used!\n");

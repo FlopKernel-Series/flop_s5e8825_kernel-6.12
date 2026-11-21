@@ -73,7 +73,7 @@ int uart_wait_till_alive(struct dbmdx_private *p);
 int uart_set_speed_host_only(struct dbmdx_private *p, int index);
 int uart_set_speed(struct dbmdx_private *p, int index);
 int uart_common_probe(struct platform_device *pdev, const char threadnamefmt[]);
-int uart_common_remove(struct platform_device *pdev);
+void uart_common_remove(struct platform_device *pdev);
 void uart_set_private_callbacks(struct dbmdx_uart_private *p);
 void uart_interface_resume(struct dbmdx_uart_private *uart_p);
 void uart_interface_suspend(struct dbmdx_uart_private *uart_p);

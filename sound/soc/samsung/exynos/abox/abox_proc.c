@@ -108,7 +108,7 @@ static const struct proc_ops abox_proc_u64_fops = {
 	.proc_read	= abox_proc_u64_read,
 	.proc_write	= abox_proc_u64_write,
 	.proc_open	= simple_open,
-	.proc_lseek	= no_llseek,
+	.proc_lseek	= noop_llseek,
 };
 
 struct proc_dir_entry *abox_proc_create_u64(const char *name, umode_t mode,
@@ -147,7 +147,7 @@ static const struct proc_ops abox_proc_u32_fops = {
 	.proc_read	= abox_proc_u32_read,
 	.proc_write	= abox_proc_u32_write,
 	.proc_open	= simple_open,
-	.proc_lseek	= no_llseek,
+	.proc_lseek	= noop_llseek,
 };
 
 struct proc_dir_entry *abox_proc_create_u32(const char *name, umode_t mode,
@@ -189,7 +189,7 @@ static const struct proc_ops abox_proc_bool_fops = {
 	.proc_read	= abox_proc_bool_read,
 	.proc_write	= abox_proc_bool_write,
 	.proc_open	= simple_open,
-	.proc_lseek	= no_llseek,
+	.proc_lseek	= noop_llseek,
 };
 
 struct proc_dir_entry *abox_proc_create_bool(const char *name, umode_t mode,

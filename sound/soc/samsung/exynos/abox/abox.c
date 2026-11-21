@@ -122,7 +122,8 @@ struct abox_data *abox_get_data(struct device *dev)
 	return dev ? dev_get_drvdata(dev) : NULL;
 }
 
-static int abox_iommu_fault_handler(struct iommu_fault *fault, void *token)
+static int __maybe_unused abox_iommu_fault_handler(struct iommu_fault *fault,
+		void *token)
 {
 	struct abox_data *data = token;
 
@@ -1438,7 +1439,7 @@ static int abox_component_control_info(struct snd_kcontrol *kcontrol,
 			for (; *c != '\0'; ++c)
 				;
 		}
-		strlcpy(uinfo->value.enumerated.name, c,
+		strscpy(uinfo->value.enumerated.name, c,
 			sizeof(uinfo->value.enumerated.name));
 		break;
 	case ABOX_CONTROL_BYTE:
@@ -2863,7 +2864,7 @@ static int abox_ext_bin_name_put(struct snd_kcontrol *kcontrol,
 	ret = request_firmware(&test, name, dev);
 	release_firmware(test);
 	if (ret >= 0) {
-		strlcpy(efw->name, name, sizeof(efw->name));
+		strscpy(efw->name, name, sizeof(efw->name));
 		abox_ext_bin_request(dev, efw);
 	}
 
@@ -3082,7 +3083,7 @@ int abox_add_extra_firmware(struct device *dev,
 	efw = abox_get_extra_firmware(data, idx);
 	if (efw) {
 		abox_info(dev, "update firmware: %s\n", name);
-		strlcpy(efw->name, name, sizeof(efw->name));
+		strscpy(efw->name, name, sizeof(efw->name));
 		efw->area = area;
 		efw->offset = offset;
 		efw->changeable = changeable;
@@ -3094,7 +3095,7 @@ int abox_add_extra_firmware(struct device *dev,
 		return -ENOMEM;
 
 	abox_info(dev, "new firmware: %s\n", name);
-	strlcpy(efw->name, name, sizeof(efw->name));
+	strscpy(efw->name, name, sizeof(efw->name));
 	efw->idx = idx;
 	efw->area = area;
 	efw->offset = offset;
@@ -3198,7 +3199,7 @@ static void abox_parse_extra_firmware(struct abox_data *data)
 		abox_dbg(dev, "%s: name=%s, area=%u, offset=%#x\n", __func__,
 				efw->name, efw->area, efw->offset);
 
-		strlcpy(efw->name, name, sizeof(efw->name));
+		strscpy(efw->name, name, sizeof(efw->name));
 		efw->idx = idx++;
 		efw->area = area;
 		efw->offset = offset;
@@ -4184,9 +4185,6 @@ static int samsung_abox_probe(struct platform_device *pdev)
 		abox_info(dev, "mapping %s\n", "cmu_top");
 		abox_iommu_map(dev, paddr, paddr, size, 0);
 	}
-
-	iommu_register_device_fault_handler(dev, abox_iommu_fault_handler,
-			data);
 
 	data->clk_pll = devm_clk_get_and_prepare(pdev, "pll");
 	if (IS_ERR(data->clk_pll))

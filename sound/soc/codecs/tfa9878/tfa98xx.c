@@ -2420,7 +2420,7 @@ static int get_profile_from_list(char *buf, int id)
 
 	list_for_each_entry(bprof, &profile_list, list) {
 		if (bprof->item_id == id) {
-			strlcpy(buf, bprof->basename, MAX_CONTROL_NAME);
+			strscpy(buf, bprof->basename, MAX_CONTROL_NAME);
 			return 0;
 		}
 	}
@@ -2559,7 +2559,7 @@ static int tfa98xx_info_profile(struct snd_kcontrol *kcontrol,
 	if (err != 0)
 		return -EINVAL;
 
-	strlcpy(uinfo->value.enumerated.name,
+	strscpy(uinfo->value.enumerated.name,
 		profile_name, MAX_CONTROL_NAME);
 
 	return 0;
@@ -6889,7 +6889,7 @@ static int tfa98xx_i2c_probe(struct i2c_client *i2c,
 
 	if (gpio_is_valid(tfa98xx->irq_gpio)) {
 		ret = gpio_request_one(tfa98xx->irq_gpio,
-			GPIOF_DIR_IN, "TFA98XX_INT");
+			GPIOD_IN, "TFA98XX_INT");
 		if (ret)
 			return ret;
 	}
@@ -7217,7 +7217,7 @@ static int __init tfa98xx_i2c_init(void)
 		PAGE_SIZE, /* Structure size, we should fit in single page */
 		0, /* Structure alignment */
 		(SLAB_HWCACHE_ALIGN | SLAB_RECLAIM_ACCOUNT |
-		SLAB_MEM_SPREAD), /* Cache property */
+		0), /* Cache property */
 		NULL); /* Object constructor */
 	if (!tfa98xx_cache) {
 		pr_err("tfa98xx can't create memory pool\n");

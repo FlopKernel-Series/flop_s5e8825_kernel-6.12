@@ -321,8 +321,8 @@ static int abox_dsif_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 }
 
 static int abox_dsif_set_channel_map(struct snd_soc_dai *dai,
-		unsigned int tx_num, unsigned int *tx_slot,
-		unsigned int rx_num, unsigned int *rx_slot)
+		unsigned int tx_num, const unsigned int *tx_slot,
+		unsigned int rx_num, const unsigned int *rx_slot)
 {
 	struct device *dev = dai->dev;
 	struct abox_if_data *data = snd_soc_dai_get_drvdata(dai);
@@ -499,7 +499,7 @@ static void abox_uaif_shutdown(struct snd_pcm_substream *substream,
 static int abox_uaif_hw_params(struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *hw_params, struct snd_soc_dai *dai)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct device *dev = dai->dev;
 	struct abox_if_data *data = snd_soc_dai_get_drvdata(dai);
 	struct abox_data *abox_data = data->abox_data;
@@ -1548,7 +1548,7 @@ int abox_if_hw_params_fixup(struct snd_soc_dai *dai,
 int abox_if_hw_params_fixup_helper(struct snd_soc_pcm_runtime *rtd,
 		struct snd_pcm_hw_params *params)
 {
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 
 	return abox_if_hw_params_fixup(dai, params);
 }

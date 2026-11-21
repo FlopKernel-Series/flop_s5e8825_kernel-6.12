@@ -19,6 +19,7 @@
 #include <linux/sched/clock.h>
 #include <linux/mm.h>
 #include <linux/mm_types.h>
+#include <linux/vmalloc.h>
 #include <asm/cacheflush.h>
 
 #include "abox_util.h"
@@ -262,7 +263,7 @@ static const struct proc_ops abox_dbg_fops_clear = {
 	.proc_open = simple_open,
 	.proc_read = abox_dbg_read_clear,
 	.proc_write = abox_dbg_write_clear,
-	.proc_lseek = no_llseek,
+	.proc_lseek = noop_llseek,
 };
 
 static void dump_gpr_from_addr_full(struct device *dev, unsigned int *addr,

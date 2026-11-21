@@ -21,6 +21,7 @@
 #include <linux/mm_types.h>
 #include <asm/cacheflush.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/vmalloc.h>
 #if IS_ENABLED(CONFIG_LINK_DEVICE_PCIE_S2MPU)
 #include <soc/samsung/exynos-s2mpu.h>
 #elif IS_ENABLED(CONFIG_LINK_DEVICE_PCIE_IOMMU)

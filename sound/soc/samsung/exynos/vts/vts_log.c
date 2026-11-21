@@ -15,6 +15,7 @@
 #include <linux/mutex.h>
 #include <sound/soc.h>
 #include <linux/pm_runtime.h>
+#include <linux/vmalloc.h>
 
 #include "vts.h"
 #include "vts_dbg.h"

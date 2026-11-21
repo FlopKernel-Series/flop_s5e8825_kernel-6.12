@@ -253,7 +253,7 @@ static struct abox_qos_req *abox_qos_new(struct device *dev,
 	if (!req)
 		return req;
 
-	strlcpy(req->name, name, sizeof(req->name));
+	strscpy(req->name, name, sizeof(req->name));
 	req->val = val;
 	req->updated = local_clock();
 	req->id = id;
@@ -366,7 +366,7 @@ int abox_qos_request(struct device *dev, enum abox_qos_class qos_class,
 			ret = -ENOMEM;
 		}
 	} else if (req->val != val) {
-		strlcpy(req->name, name, sizeof(req->name));
+		strscpy(req->name, name, sizeof(req->name));
 		req->val = val;
 		req->updated = local_clock();
 	} else {
@@ -396,7 +396,7 @@ void abox_qos_clear(struct device *dev, enum abox_qos_class qos_class)
 	list_for_each_entry(req, &qos->requests, list) {
 		if (req->val) {
 			req->val = 0;
-			strlcpy(req->name, "clear", sizeof(req->name));
+			strscpy(req->name, "clear", sizeof(req->name));
 			req->updated = local_clock();
 			abox_info(dev, "clearing qos: %d, %#x\n",
 					qos_class, req->id);

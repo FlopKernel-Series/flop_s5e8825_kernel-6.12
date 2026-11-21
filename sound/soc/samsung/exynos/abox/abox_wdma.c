@@ -157,9 +157,9 @@ static void abox_wdma_disable_barrier(struct device *dev,
 
 static int abox_wdma_backend(struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 
-	return (asoc_rtd_to_cpu(rtd, 0)->id >= ABOX_WDMA0_BE);
+	return (snd_soc_rtd_to_cpu(rtd, 0)->id >= ABOX_WDMA0_BE);
 }
 
 static int abox_wdma_hw_params(struct snd_soc_component *component,
@@ -167,8 +167,8 @@ static int abox_wdma_hw_params(struct snd_soc_component *component,
 		struct snd_pcm_hw_params *params)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	struct abox_data *abox_data = data->abox_data;
@@ -292,8 +292,8 @@ static int abox_wdma_hw_params(struct snd_soc_component *component,
 static int abox_wdma_hw_free(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	int id = data->id;
@@ -322,8 +322,8 @@ static int abox_wdma_hw_free(struct snd_soc_component *component,
 static int abox_wdma_prepare(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	int id = data->id;
@@ -373,8 +373,8 @@ static int abox_wdma_trigger_ipc(struct abox_dma_data *data, bool atomic,
 static int abox_wdma_trigger(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream, int cmd)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	int ret;
@@ -410,8 +410,8 @@ static snd_pcm_uframes_t abox_wdma_pointer(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	int id = data->id;
@@ -463,8 +463,8 @@ static snd_pcm_uframes_t abox_wdma_pointer(struct snd_soc_component *component,
 static int abox_wdma_open(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	struct abox_data *abox_data = data->abox_data;
@@ -519,8 +519,8 @@ static int abox_wdma_open(struct snd_soc_component *component,
 static int abox_wdma_close(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	struct abox_data *abox_data = data->abox_data;
@@ -566,8 +566,8 @@ static int abox_wdma_mmap(struct snd_soc_component *component,
 		struct vm_area_struct *vma)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 
@@ -587,8 +587,8 @@ static int abox_wdma_copy_user(struct snd_soc_component *component,
 		unsigned long pos, struct iov_iter *iter, unsigned long bytes)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	int id = data->id;
@@ -625,7 +625,7 @@ static int abox_wdma_copy_user(struct snd_soc_component *component,
 static int abox_wdma_pcm_new(struct snd_soc_component *component,
 		struct snd_soc_pcm_runtime *rtd)
 {
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(dai);
 	struct device *dev = data->dev;
 	struct device *dev_abox = data->abox_data->dev;
@@ -682,7 +682,7 @@ static void abox_wdma_pcm_free(struct snd_soc_component *component,
 		struct snd_pcm *pcm)
 {
 	struct snd_soc_pcm_runtime *rtd = snd_pcm_chip(pcm);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(dai);
 	struct device *dev = data->dev;
 	struct device *dev_abox = data->abox_data->dev;
@@ -876,7 +876,7 @@ static int abox_wdma_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 		return 0;
 	}
 
-	rtd = asoc_substream_to_rtd(data->substream);
+	rtd = snd_soc_substream_to_rtd(data->substream);
 
 	if (mute) {
 		if (!abox_dma_can_stop(rtd, stream))

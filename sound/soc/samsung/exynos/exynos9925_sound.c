@@ -182,7 +182,7 @@ static int madera_start_fll(struct snd_soc_card *card,
 	if (!config->valid)
 		return 0;
 
-	codec_dai = asoc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
+	codec_dai = snd_soc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
 	codec = codec_dai->component;
 
 	pll_id = map_fllid_with_name(config->name);
@@ -237,7 +237,7 @@ static int madera_stop_fll(struct snd_soc_card *card,
 	if (!config->valid)
 		return 0;
 
-	codec_dai = asoc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
+	codec_dai = snd_soc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
 	codec = codec_dai->component;
 
 	ret = snd_soc_component_set_pll(codec, config->id, 0, 0, 0);
@@ -259,7 +259,7 @@ static int madera_set_clock(struct snd_soc_card *card,
 	if (!config->valid)
 		return 0;
 
-	aif_dai = asoc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
+	aif_dai = snd_soc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
 	codec = aif_dai->component;
 
 	clk_id = map_clkid_with_name(config->name);
@@ -317,7 +317,7 @@ static int madera_stop_clock(struct snd_soc_card *card,
 	if (!config->valid)
 		return 0;
 
-	aif_dai = asoc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
+	aif_dai = snd_soc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
 	codec = aif_dai->component;
 
 	ret = snd_soc_component_set_sysclk(codec, config->id, 0, 0, 0);
@@ -406,7 +406,7 @@ static int cs35l41_hw_params(struct snd_pcm_substream *substream,
 	/* using bclk for sysclk */
 	clk = snd_soc_params_to_bclk(params);
 	for (i = 0; i < num_codecs; i++) {
-		codec_dai = asoc_rtd_to_codec(rtd, i);
+		codec_dai = snd_soc_rtd_to_codec(rtd, i);
 		ret = snd_soc_component_set_sysclk(codec_dai->component,
 					CLK_SRC_SCLK, 0, clk,
 					SND_SOC_CLOCK_IN);
@@ -428,8 +428,8 @@ static const struct snd_soc_ops uaif_ops = {
 static int dsif_hw_params(struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *hw_params)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	int tx_slot[] = {0, 1};
 
 	/* bclk ratio 64 for DSD64, 128 for DSD128 */
@@ -455,7 +455,7 @@ static int madera_set_bias_level(struct snd_soc_card *card,
 	struct madera_drvdata *drvdata = card->drvdata;
 	int ret;
 
-	codec_dai = asoc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
+	codec_dai = snd_soc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
 
 	if (dapm->dev != codec_dai->dev)
 		return 0;
@@ -492,7 +492,7 @@ static int madera_set_bias_level_post(struct snd_soc_card *card,
 	struct madera_drvdata *drvdata = card->drvdata;
 	int ret;
 
-	codec_dai = asoc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
+	codec_dai = snd_soc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
 
 	if (dapm->dev != codec_dai->dev)
 		return 0;
@@ -652,10 +652,10 @@ static int madera_amp_late_probe(struct snd_soc_card *card, int dai)
 
 	rtd = snd_soc_get_pcm_runtime(card, &card->dai_link[dai]);
 
-	amp_dai = asoc_rtd_to_codec(rtd, 0);
+	amp_dai = snd_soc_rtd_to_codec(rtd, 0);
 	amp = amp_dai->component;
 
-	ret = snd_soc_dai_set_tdm_slot(asoc_rtd_to_cpu(rtd, 0), 0x3, 0x3, 4, 16);
+	ret = snd_soc_dai_set_tdm_slot(snd_soc_rtd_to_cpu(rtd, 0), 0x3, 0x3, 4, 16);
 	if (ret)
 		dev_err(card->dev, "Failed to set TDM: %d\n", ret);
 
@@ -685,7 +685,7 @@ static int exynos_late_probe(struct snd_soc_card *card)
 	const char *name;
 	int ret, i;
 
-	aif_dai = asoc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
+	aif_dai = snd_soc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
 
 	if (drvdata->sysclk.valid) {
 		ret = snd_soc_dai_set_sysclk(aif_dai, drvdata->sysclk.id, 0, 0);

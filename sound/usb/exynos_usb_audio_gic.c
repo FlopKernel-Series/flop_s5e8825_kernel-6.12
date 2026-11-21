@@ -814,13 +814,13 @@ static int exynos_usb_check_pm_bypass(struct usb_device *udev, int suspend)
  * Set bypass = 1 will skip USB suspend.
  */
 static void exynos_usb_vendor_dev_suspend(void *unused, struct usb_device *udev,
-				   pm_message_t msg, int *bypass)
+				   pm_message_t msg, bool *bypass)
 {
 	int ret;
 
 	ret = exynos_usb_check_pm_bypass(udev, true);
 	if (ret)
-		*bypass = 1;
+		*bypass = true;
 
 	return;
 }
@@ -829,13 +829,13 @@ static void exynos_usb_vendor_dev_suspend(void *unused, struct usb_device *udev,
  * Set bypass = 1 will skip USB resume.
  */
 static void exynos_usb_vendor_dev_resume(void *unused, struct usb_device *udev,
-				  pm_message_t msg, int *bypass)
+				  pm_message_t msg, bool *bypass)
 {
 	int ret;
 
 	ret = exynos_usb_check_pm_bypass(udev, false);
 	if (ret)
-		*bypass = 1;
+		*bypass = true;
 
 	return;
 }

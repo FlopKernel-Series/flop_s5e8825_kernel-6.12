@@ -313,7 +313,7 @@ static int dma_hw_params(struct snd_soc_component *component,
 	int burst_len;
 	struct samsung_dma_req req;
 	struct samsung_dma_config config;
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct dp_audio_pdata *pdata = dev_get_drvdata(dp_dma_devs[dai->id]);
 
 	pr_debug("Entered %s\n", __func__);

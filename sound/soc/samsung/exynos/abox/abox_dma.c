@@ -323,8 +323,8 @@ static int abox_dma_hw_params(struct snd_soc_component *component,
 		struct snd_pcm_hw_params *params)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct snd_soc_component *cmpnt = data->cmpnt;
 	struct device *dev = data->dev;
@@ -428,8 +428,8 @@ static int abox_dma_hw_params(struct snd_soc_component *component,
 static int abox_dma_hw_free(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 
@@ -446,8 +446,8 @@ static int abox_dma_hw_free(struct snd_soc_component *component,
 static int abox_dma_prepare(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 
@@ -464,8 +464,8 @@ static int abox_dma_prepare(struct snd_soc_component *component,
 static int abox_dma_trigger(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream, int cmd)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct snd_soc_component *cmpnt = data->cmpnt;
 	struct device *dev = data->dev;
@@ -566,8 +566,8 @@ static snd_pcm_uframes_t abox_dma_pointer(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	size_t pointer;
@@ -585,8 +585,8 @@ static snd_pcm_uframes_t abox_dma_pointer(struct snd_soc_component *component,
 static int abox_dma_open(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 	struct abox_data *abox_data = data->abox_data;
@@ -605,8 +605,8 @@ static int abox_dma_open(struct snd_soc_component *component,
 static int abox_dma_close(struct snd_soc_component *component,
 		struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 
@@ -622,8 +622,8 @@ static int abox_dma_mmap(struct snd_soc_component *component,
 		struct vm_area_struct *vma)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(cpu_dai);
 	struct device *dev = data->dev;
 
@@ -642,7 +642,7 @@ static int abox_dma_pcm_new(struct snd_soc_component *component,
 			pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream :
 			pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream;
 	struct snd_dma_buffer *dmab = &substream->dma_buffer;
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(dai);
 	struct device *dev = data->dev;
 	struct device *dev_abox = data->dev_abox;
@@ -670,7 +670,7 @@ static void abox_dma_pcm_free(struct snd_soc_component *component,
 		struct snd_pcm *pcm)
 {
 	struct snd_soc_pcm_runtime *rtd = snd_pcm_chip(pcm);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(dai);
 	struct device *dev = data->dev;
 	struct device *dev_abox = data->dev_abox;
@@ -1594,7 +1594,7 @@ static const struct proc_ops abox_dma_dump_fops = {
 static int abox_dma_dump_pcm_new(struct snd_soc_component *component,
 		struct snd_soc_pcm_runtime *rtd)
 {
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(dai);
 	struct device *dev = data->dev;
 
@@ -1612,7 +1612,7 @@ static void abox_dma_dump_pcm_free(struct snd_soc_component *component,
 		struct snd_pcm *pcm)
 {
 	struct snd_soc_pcm_runtime *rtd = snd_pcm_chip(pcm);
-	struct snd_soc_dai *dai = asoc_rtd_to_cpu(rtd, 0);
+	struct snd_soc_dai *dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct abox_dma_data *data = snd_soc_dai_get_drvdata(dai);
 	struct device *dev = data->dev;
 
