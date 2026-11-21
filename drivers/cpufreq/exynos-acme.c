@@ -864,11 +864,10 @@ static void change_dm_table_work(struct work_struct *work)
 {
 	struct exynos_cpufreq_domain *domain;
 	struct exynos_cpufreq_dm *dm;
-	int index = 0;
+	int index;
 
-	if ((cur_type & EMSTUNE_MODE_TYPE_GAME) &&
-			!(cur_type & EMSTUNE_BOOST_TYPE_EXTREME))
-		index = 1;
+	/* EMS hands us the DSU table index for the current mode/boost already */
+	index = cur_type;
 
 	if (dm_table_index != index) {
 		list_for_each_entry(domain, &domains, list) {

@@ -97,6 +97,38 @@ struct dsufreq_domain {
 
 static struct dsufreq_domain dsufreq;
 
+unsigned long *dsufreq_get_freq_table(int *table_size)
+{
+	*table_size = dsufreq.stats->table_size;
+	return dsufreq.stats->freq_table;
+}
+EXPORT_SYMBOL_GPL(dsufreq_get_freq_table);
+
+void dsufreq_get_volt_table(unsigned int *volt_table)
+{
+	struct fv_table {
+		unsigned int freq;
+		unsigned int volt;
+	} *fv_table;
+	int i, size = dsufreq.stats->table_size;
+
+	fv_table = kcalloc(size, sizeof(struct fv_table), GFP_KERNEL);
+	if (!fv_table)
+		return;
+
+	for (i = 0; i < size; i++)
+		fv_table[i].freq = dsufreq.stats->freq_table[i];
+
+	cal_dfs_get_freq_volt_table(dsufreq.cal_id, fv_table, size);
+
+	for (i = 0; i < size; i++)
+		volt_table[i] = fv_table[i].volt;
+
+	kfree(fv_table);
+}
+EXPORT_SYMBOL_GPL(dsufreq_get_volt_table);
+
+
 /*********************************************************************
  *                           Helper Function                         *
  *********************************************************************/
