@@ -2,7 +2,6 @@
 #include "ipc_chub.h"
 
 #include <linux/firmware.h>
-#include <linux/spu-verify.h>
 #include <soc/samsung/exynos/nanohub.h>
 
 #define SPU_FW_FILE "spu/sensorhub/shub_spu.bin"
