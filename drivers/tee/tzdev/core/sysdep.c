@@ -120,8 +120,7 @@ struct file *sysdep_get_exe_file(struct task_struct *task)
 		return NULL;
 
 	rcu_read_lock();
-	exe_file = rcu_dereference(mm->exe_file);
-	if (exe_file && !get_file_rcu(exe_file))
+	if (!get_file_rcu(&mm->exe_file))
 		exe_file = NULL;
 	rcu_read_unlock();
 	mmput(mm);
