@@ -1678,7 +1678,7 @@ err_out:
 	return ret;
 }
 
-static int goodix_ts_remove(struct platform_device *pdev)
+static void goodix_ts_remove(struct platform_device *pdev)
 {
 	struct goodix_ts_data *ts = platform_get_drvdata(pdev);
 	struct goodix_ts_hw_ops *hw_ops = ts->hw_ops;
@@ -1721,7 +1721,6 @@ static int goodix_ts_remove(struct platform_device *pdev)
 		goodix_ts_power_off(ts);
 	}
 
-	return 0;
 }
 
 #ifdef CONFIG_PM

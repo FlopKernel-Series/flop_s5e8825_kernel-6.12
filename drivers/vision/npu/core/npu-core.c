@@ -233,7 +233,7 @@ int npu_core_runtime_resume(struct device *dev)
 }
 #endif
 
-int npu_core_remove(struct platform_device *pdev)
+void npu_core_remove(struct platform_device *pdev)
 {
 	struct device *dev;
 	struct npu_core *core;
@@ -248,7 +248,6 @@ int npu_core_remove(struct platform_device *pdev)
 	npu_clk_put(&core->clks, dev);
 
 	probe_info("completed in %s\n", __func__);
-	return 0;
 }
 #endif
 

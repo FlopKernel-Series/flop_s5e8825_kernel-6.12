@@ -755,13 +755,12 @@ static int contexthub_ipc_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int contexthub_ipc_remove(struct platform_device *pdev)
+static void contexthub_ipc_remove(struct platform_device *pdev)
 {
 	struct contexthub_ipc_info *chub = platform_get_drvdata(pdev);
 
 	kthread_stop(chub->log_kthread);
 	chub_wake_lock_destroy(chub->ws_reset);
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_SHUB)

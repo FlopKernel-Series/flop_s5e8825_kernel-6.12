@@ -607,7 +607,7 @@ err_power_supply_register:
 	return ret;
 }
 
-static int s2mf301_top_remove(struct platform_device *pdev)
+static void s2mf301_top_remove(struct platform_device *pdev)
 {
 	struct s2mf301_top_data *top = platform_get_drvdata(pdev);
 #if IS_ENABLED(CONFIG_SYSFS_S2MF301)
@@ -621,7 +621,6 @@ static int s2mf301_top_remove(struct platform_device *pdev)
 #endif
 
 	kfree(top);
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_PM)

@@ -138,9 +138,8 @@ static int sec_usb_hook_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int sec_usb_hook_remove(struct platform_device *pdev)
+static void sec_usb_hook_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

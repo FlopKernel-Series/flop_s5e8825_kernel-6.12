@@ -1388,7 +1388,7 @@ vdd33_err:
 	return ret;
 }
 
-static int dwc3_exynos_remove(struct platform_device *pdev)
+static void dwc3_exynos_remove(struct platform_device *pdev)
 {
 	struct dwc3_exynos	*exynos = platform_get_drvdata(pdev);
 
@@ -1415,7 +1415,6 @@ static int dwc3_exynos_remove(struct platform_device *pdev)
 
 	kfree(exynos->xhci_pm_ops);
 
-	return 0;
 }
 
 #ifdef CONFIG_PM

@@ -323,9 +323,8 @@ void exynos_acpm_set_fast_switch(unsigned int ch)
 }
 EXPORT_SYMBOL_GPL(exynos_acpm_set_fast_switch);
 
-static int acpm_dvfs_remove(struct platform_device *pdev)
+static void acpm_dvfs_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static const struct of_device_id acpm_dvfs_match[] = {

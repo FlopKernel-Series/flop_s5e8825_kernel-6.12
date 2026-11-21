@@ -1500,13 +1500,12 @@ static int dw_mci_exynos_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int dw_mci_exynos_remove(struct platform_device *pdev)
+static void dw_mci_exynos_remove(struct platform_device *pdev)
 {
 	pm_runtime_disable(&pdev->dev);
 	pm_runtime_set_suspended(&pdev->dev);
 	pm_runtime_put_noidle(&pdev->dev);
 
-	return dw_mci_pltfm_remove(pdev);
 }
 
 static const struct dev_pm_ops dw_mci_exynos_pmops = {

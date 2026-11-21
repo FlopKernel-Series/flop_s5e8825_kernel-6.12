@@ -2195,7 +2195,7 @@ int votf_probe(struct platform_device *pdev)
 	return ret;
 }
 
-int votf_remove(struct platform_device *pdev)
+void votf_remove(struct platform_device *pdev)
 {
 	struct votf_dev *votf;
 	u32 addr = 0;
@@ -2204,7 +2204,7 @@ int votf_remove(struct platform_device *pdev)
 	votf = (struct votf_dev *)platform_get_drvdata(pdev);
 	if (!votf) {
 		dev_err(&pdev->dev, "no memory for VOTF device\n");
-		return -ENOMEM;
+		return;
 	}
 
 	for (ip = 0; ip < IP_MAX; ip++) {
@@ -2224,7 +2224,6 @@ int votf_remove(struct platform_device *pdev)
 	devm_kfree(&pdev->dev, votf);
 	platform_set_drvdata(pdev, NULL);
 
-	return 0;
 }
 
 void votf_shutdown(struct platform_device *pdev)

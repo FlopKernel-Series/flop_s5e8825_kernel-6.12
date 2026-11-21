@@ -1017,7 +1017,7 @@ ErrorExit:
 #endif
 #endif
 
-static int npu_device_remove(struct platform_device *pdev)
+static void npu_device_remove(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct device *dev;
@@ -1068,7 +1068,6 @@ static int npu_device_remove(struct platform_device *pdev)
 	}
 
 	probe_info("completed in %s\n", __func__);
-	return 0;
 }
 
 /*

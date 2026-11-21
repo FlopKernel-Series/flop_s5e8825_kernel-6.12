@@ -246,7 +246,7 @@ static int exynos_mcinfo_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int exynos_mcinfo_remove(struct platform_device *pdev)
+static void exynos_mcinfo_remove(struct platform_device *pdev)
 {
 	struct mcinfo_data *data = platform_get_drvdata(pdev);
 	int i;
@@ -266,7 +266,6 @@ static int exynos_mcinfo_remove(struct platform_device *pdev)
 	kfree(data);
 	ext_data = NULL;
 
-	return 0;
 }
 
 static const struct of_device_id exynos_mcinfo_match[] = {

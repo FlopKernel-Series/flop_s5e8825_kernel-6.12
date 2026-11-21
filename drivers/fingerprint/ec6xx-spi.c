@@ -1349,10 +1349,10 @@ static void ec6xx_remove(struct platform_device* pdev)
 	ec6xx_remove_common(&pdev->dev);
 }
 #else
-static int ec6xx_remove(struct platform_device *pdev)
+static void ec6xx_remove(struct platform_device *pdev)
 {
 	ec6xx_remove_common(&pdev->dev);
-	return 0;
+	return;
 }
 #endif
 #endif

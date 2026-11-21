@@ -769,7 +769,7 @@ err_flexpmu_info:
 	return ret;
 }
 
-static int exynos_flexpmu_dbg_remove(struct platform_device *pdev)
+static void exynos_flexpmu_dbg_remove(struct platform_device *pdev)
 {
 	struct dbgfs_info *flexpmu_dbg_info = platform_get_drvdata(pdev);
 
@@ -777,7 +777,6 @@ static int exynos_flexpmu_dbg_remove(struct platform_device *pdev)
 	kfree(flexpmu_dbg_info);
 	platform_set_drvdata(pdev, NULL);
 
-	return 0;
 }
 
 static const struct of_device_id exynos_flexpmu_dbg_match[] = {

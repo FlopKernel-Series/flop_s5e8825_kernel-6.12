@@ -266,7 +266,7 @@ err_dbg_info:
 	return ret;
 }
 
-static int exynos_pd_dbg_remove(struct platform_device *pdev)
+static void exynos_pd_dbg_remove(struct platform_device *pdev)
 {
 	struct exynos_pd_dbg_info *dbg_info = platform_get_drvdata(pdev);
 	struct device *dev = dbg_info->dev;
@@ -284,7 +284,6 @@ static int exynos_pd_dbg_remove(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, NULL);
 
-	return 0;
 }
 
 static int exynos_pd_dbg_runtime_suspend(struct device *dev)

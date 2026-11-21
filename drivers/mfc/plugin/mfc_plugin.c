@@ -235,7 +235,7 @@ err_butler_wq:
 	return ret;
 }
 
-static int mfc_plugin_remove(struct platform_device *pdev)
+static void mfc_plugin_remove(struct platform_device *pdev)
 {
 	struct mfc_core *core = platform_get_drvdata(pdev);
 
@@ -248,7 +248,6 @@ static int mfc_plugin_remove(struct platform_device *pdev)
 	destroy_workqueue(core->butler_wq);
 
 	mfc_core_info("--%s remove\n", core->name);
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_PM_SLEEP)

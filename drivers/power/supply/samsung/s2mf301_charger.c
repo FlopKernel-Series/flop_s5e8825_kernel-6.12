@@ -1470,14 +1470,13 @@ err_parse_dt_nomem:
 	return ret;
 }
 
-static int s2mf301_charger_remove(struct platform_device *pdev)
+static void s2mf301_charger_remove(struct platform_device *pdev)
 {
 	struct s2mf301_charger_data *charger = platform_get_drvdata(pdev);
 
 	power_supply_unregister(charger->psy_chg);
 	mutex_destroy(&charger->charger_mutex);
 	kfree(charger);
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_PM)

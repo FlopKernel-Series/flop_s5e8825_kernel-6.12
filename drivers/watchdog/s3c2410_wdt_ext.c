@@ -1726,7 +1726,7 @@ static int s3c2410wdt_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int s3c2410wdt_remove(struct platform_device *dev)
+static void s3c2410wdt_remove(struct platform_device *dev)
 {
 	int ret = 0;
 	struct s3c2410_wdt *wdt = platform_get_drvdata(dev);
@@ -1734,7 +1734,7 @@ static int s3c2410wdt_remove(struct platform_device *dev)
 	if (wdt->drv_data->pmu_reset_func)
 		ret = wdt->drv_data->pmu_reset_func(wdt, true);
 	if (ret < 0)
-		return ret;
+		return;
 
 	watchdog_unregister_device(&wdt->wdt_device);
 
@@ -1746,7 +1746,6 @@ static int s3c2410wdt_remove(struct platform_device *dev)
 
 	unregister_pm_notifier(&s3c2410wdt_pm_nb);
 
-	return ret;
 }
 
 static void s3c2410wdt_shutdown(struct platform_device *dev)

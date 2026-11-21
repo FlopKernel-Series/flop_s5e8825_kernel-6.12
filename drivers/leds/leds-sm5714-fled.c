@@ -807,7 +807,7 @@ free_dev:
 	return ret;
 }
 
-static int sm5714_fled_remove(struct platform_device *pdev)
+static void sm5714_fled_remove(struct platform_device *pdev)
 {
 	struct sm5714_fled_data *fled = platform_get_drvdata(pdev);
 
@@ -816,7 +816,6 @@ static int sm5714_fled_remove(struct platform_device *pdev)
 	devm_kfree(&pdev->dev, fled->pdata);
 	devm_kfree(&pdev->dev, fled);
 
-	return 0;
 }
 
 static struct of_device_id sm5714_fled_match_table[] = {

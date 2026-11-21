@@ -2475,7 +2475,7 @@ err_return:
 	return ret;
 }
 
-static int sm5714_muic_remove(struct platform_device *pdev)
+static void sm5714_muic_remove(struct platform_device *pdev)
 {
 	struct sm5714_muic_data *muic_data = platform_get_drvdata(pdev);
 
@@ -2501,7 +2501,6 @@ static int sm5714_muic_remove(struct platform_device *pdev)
 		kfree(muic_data);
 	}
 
-	return 0;
 }
 
 static void sm5714_muic_shutdown(struct platform_device *pdev)

@@ -856,9 +856,8 @@ static int ehld_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int ehld_remove(struct platform_device *pdev)
+static void ehld_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static int ehld_suspend(struct device *dev)

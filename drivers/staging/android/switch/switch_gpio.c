@@ -134,7 +134,7 @@ err_switch_dev_register:
 	return ret;
 }
 
-static int gpio_switch_remove(struct platform_device *pdev)
+static void gpio_switch_remove(struct platform_device *pdev)
 {
 	struct gpio_switch_data *switch_data = platform_get_drvdata(pdev);
 
@@ -143,7 +143,6 @@ static int gpio_switch_remove(struct platform_device *pdev)
 	switch_dev_unregister(&switch_data->sdev);
 	kfree(switch_data);
 
-	return 0;
 }
 
 static struct platform_driver gpio_switch_driver = {

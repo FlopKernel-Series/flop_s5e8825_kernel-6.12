@@ -10803,7 +10803,7 @@ err_bat_free:
 	return ret;
 }
 
-static int sec_battery_remove(struct platform_device *pdev)
+static void sec_battery_remove(struct platform_device *pdev)
 {
 	struct sec_battery_info *battery = platform_get_drvdata(pdev);
 
@@ -10868,7 +10868,6 @@ static int sec_battery_remove(struct platform_device *pdev)
 
 	pr_info("%s: --\n", __func__);
 
-	return 0;
 }
 
 static int sec_battery_prepare(struct device *dev)

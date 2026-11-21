@@ -90,9 +90,8 @@ static int abc_hub_resume(struct device *dev)
 	return ret;
 }
 
-static int abc_hub_remove(struct platform_device *pdev)
+static void abc_hub_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static const struct dev_pm_ops abc_hub_pm = {

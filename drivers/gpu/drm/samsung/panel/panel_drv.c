@@ -7990,7 +7990,7 @@ err:
 	return ret;
 }
 
-static int panel_drv_remove(struct platform_device *pdev)
+static void panel_drv_remove(struct platform_device *pdev)
 {
 	struct panel_device *panel;
 
@@ -8002,7 +8002,6 @@ static int panel_drv_remove(struct platform_device *pdev)
 
 	panel_device_destroy(panel);
 
-	return 0;
 }
 
 static const struct of_device_id panel_drv_of_match_table[] = {

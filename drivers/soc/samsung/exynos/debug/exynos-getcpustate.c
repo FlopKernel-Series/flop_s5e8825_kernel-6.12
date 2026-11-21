@@ -317,10 +317,9 @@ static int getcpustate_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int getcpustate_remove(struct platform_device *pdev)
+static void getcpustate_remove(struct platform_device *pdev)
 {
 	getcpustate_desc = NULL;
-	return 0;
 }
 
 static const struct of_device_id getcpustate_dt_match[] = {

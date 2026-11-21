@@ -1217,7 +1217,7 @@ static int s2mpb02_led_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int s2mpb02_led_remove(struct platform_device *pdev)
+static void s2mpb02_led_remove(struct platform_device *pdev)
 {
 	struct s2mpb02_led_data **led_datas = platform_get_drvdata(pdev);
 	int i;
@@ -1236,7 +1236,6 @@ static int s2mpb02_led_remove(struct platform_device *pdev)
 	}
 	kfree(led_datas);
 
-	return 0;
 }
 
 static void s2mpb02_led_shutdown(struct device *dev)

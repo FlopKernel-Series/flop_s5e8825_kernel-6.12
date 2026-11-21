@@ -2628,7 +2628,7 @@ alloc_err0:
 	return ret;
 }
 
-static int s610_radio_remove(struct platform_device *pdev)
+static void s610_radio_remove(struct platform_device *pdev)
 {
 	struct s610_radio *radio = platform_get_drvdata(pdev);
 
@@ -2656,7 +2656,6 @@ static int s610_radio_remove(struct platform_device *pdev)
 		kfree(radio);
 	}
 
-	return 0;
 }
 
 static int fm_clk_get(struct s610_radio *radio)

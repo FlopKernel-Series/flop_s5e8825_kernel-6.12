@@ -1122,9 +1122,8 @@ static int direct_dm_probe(struct platform_device *pdev)
 	return direct_dm_create(pdev);
 }
 
-static int direct_dm_remove(struct platform_device *pdev)
+static void direct_dm_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static int direct_dm_suspend(struct device *dev)

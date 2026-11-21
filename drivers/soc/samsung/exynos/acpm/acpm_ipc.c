@@ -1108,7 +1108,6 @@ int acpm_ipc_probe(struct platform_device *pdev)
 	return ret;
 }
 
-int acpm_ipc_remove(struct platform_device *pdev)
+void acpm_ipc_remove(struct platform_device *pdev)
 {
-	return 0;
 }

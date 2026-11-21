@@ -189,7 +189,7 @@ static int exyswd_rng_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int exyswd_rng_remove(struct platform_device *pdev)
+static void exyswd_rng_remove(struct platform_device *pdev)
 {
 	struct exyswd_rng_dev *rng_dev = platform_get_drvdata(pdev);
 	struct random_buf *rbuf = &rng_dev->rbuf;
@@ -204,7 +204,6 @@ static int exyswd_rng_remove(struct platform_device *pdev)
 		rbuf->buf_pa_addr = 0;
 	}
 
-	return 0;
 }
 
 static struct platform_driver exyswd_rng_driver = {

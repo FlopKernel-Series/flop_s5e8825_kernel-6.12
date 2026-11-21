@@ -779,7 +779,7 @@ static int exynos_amb_control_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int exynos_amb_control_remove(struct platform_device *pdev)
+static void exynos_amb_control_remove(struct platform_device *pdev)
 {
 	struct exynos_amb_control_data *data = platform_get_drvdata(pdev);
 
@@ -791,7 +791,6 @@ static int exynos_amb_control_remove(struct platform_device *pdev)
 
 	kthread_cancel_delayed_work_sync(&data->amb_dwork);
 
-	return 0;
 }
 
 static const struct of_device_id exynos_amb_control_match[] = {

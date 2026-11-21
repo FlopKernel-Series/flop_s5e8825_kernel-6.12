@@ -367,9 +367,8 @@ static int gnss_mbox_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int gnss_mbox_remove(struct platform_device *pdev)
+static void gnss_mbox_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static const struct of_device_id gnss_mbox_dt_match[] = {

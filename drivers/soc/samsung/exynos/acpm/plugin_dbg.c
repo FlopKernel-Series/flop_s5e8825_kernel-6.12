@@ -171,9 +171,8 @@ err_dbgfs_root:
 	return ret;
 }
 
-static int acpm_plg_dbg_remove(struct platform_device *pdev)
+static void acpm_plg_dbg_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static const struct of_device_id of_acpm_plg_dbg_match[] = {

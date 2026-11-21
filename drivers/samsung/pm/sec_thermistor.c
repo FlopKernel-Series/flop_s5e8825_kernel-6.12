@@ -308,12 +308,12 @@ err_create_device:
 	return ret;
 }
 
-static int sec_therm_remove(struct platform_device *pdev)
+static void sec_therm_remove(struct platform_device *pdev)
 {
 	struct sec_therm_info *info = platform_get_drvdata(pdev);
 
 	if (!info)
-		return 0;
+		return;
 
 #if IS_ENABLED(CONFIG_DRV_SAMSUNG)
 	sysfs_remove_group(&info->sec_dev->kobj, &sec_therm_group);
@@ -322,7 +322,6 @@ static int sec_therm_remove(struct platform_device *pdev)
 	iio_channel_release(info->chan);
 	platform_set_drvdata(pdev, NULL);
 
-	return 0;
 }
 
 static struct platform_driver sec_thermistor_driver = {

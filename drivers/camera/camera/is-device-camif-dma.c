@@ -455,7 +455,7 @@ static int is_camif_dma_probe(struct platform_device *pdev)
 	return data->probe(pdev, data);
 }
 
-static int is_camif_dma_remove(struct platform_device *pdev)
+static void is_camif_dma_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	const struct of_device_id *of_id;
@@ -463,11 +463,10 @@ static int is_camif_dma_remove(struct platform_device *pdev)
 
 	of_id = of_match_device(of_match_ptr(is_camif_dma_of_table), dev);
 	if (!of_id)
-		return -EINVAL;
+		return;
 
 	data = (struct is_camif_dma_data *)of_id->data;
 
-	return data->remove(pdev, data);
 }
 
 struct platform_driver is_camif_dma_driver = {

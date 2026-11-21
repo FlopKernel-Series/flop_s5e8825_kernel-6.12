@@ -75,9 +75,8 @@ static int sec_ufs_driver_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int sec_ufs_driver_remove(struct platform_device *pdev)
+static void sec_ufs_driver_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static const struct of_device_id sec_ufs_driver_match[] = {

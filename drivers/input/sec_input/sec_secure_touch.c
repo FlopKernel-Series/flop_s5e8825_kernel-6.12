@@ -377,7 +377,7 @@ static int sec_secure_touch_probe(struct platform_device *pdev)
 #if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
 static void sec_secure_touch_remove(struct platform_device *pdev)
 #else
-static int sec_secure_touch_remove(struct platform_device *pdev)
+static void sec_secure_touch_remove(struct platform_device *pdev)
 #endif
 {
 	struct sec_secure_touch *data = platform_get_drvdata(pdev);
@@ -405,7 +405,7 @@ static int sec_secure_touch_remove(struct platform_device *pdev)
 	g_ss_touch = NULL;
 	kfree(data);
 #if (KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE)
-	return 0;
+	return;
 #endif
 }
 

@@ -406,13 +406,12 @@ err_power_supply_register:
 	return ret;
 }
 
-static int s2mu106_pmeter_remove(struct platform_device *pdev)
+static void s2mu106_pmeter_remove(struct platform_device *pdev)
 {
 	struct s2mu106_pmeter_data *pmeter =
 		platform_get_drvdata(pdev);
 
 	kfree(pmeter);
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_PM)

@@ -336,9 +336,8 @@ fail_out:
 
 }
 
-static int secgpio_dvs_remove(struct platform_device *pdev)
+static void secgpio_dvs_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static struct platform_driver secgpio_dvs = {

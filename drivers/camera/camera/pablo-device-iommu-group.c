@@ -196,7 +196,7 @@ static int pablo_device_iommu_group_probe(struct platform_device *pdev)
 	return data->probe(pdev, data);
 }
 
-static int pablo_device_iommu_group_remove(struct platform_device *pdev)
+static void pablo_device_iommu_group_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	const struct of_device_id *of_id;
@@ -204,11 +204,10 @@ static int pablo_device_iommu_group_remove(struct platform_device *pdev)
 
 	of_id = of_match_device(of_match_ptr(pable_iommu_group_of_table), dev);
 	if (!of_id)
-		return -EINVAL;
+		return;
 
 	data = (struct pablo_iommu_group_data *)of_id->data;
 
-	return data->remove(pdev, data);
 }
 
 struct platform_driver pablo_iommu_group_driver = {

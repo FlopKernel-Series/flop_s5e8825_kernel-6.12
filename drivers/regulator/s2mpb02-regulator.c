@@ -514,7 +514,7 @@ err_pdata:
 	return ret;
 }
 
-static int s2mpb02_pmic_remove(struct platform_device *pdev)
+static void s2mpb02_pmic_remove(struct platform_device *pdev)
 {
 #if IS_ENABLED(CONFIG_DRV_SAMSUNG_PMIC)
 	struct s2mpb02_data *s2mpb02 = platform_get_drvdata(pdev);
@@ -530,7 +530,6 @@ static int s2mpb02_pmic_remove(struct platform_device *pdev)
 #else
 	dev_info(&pdev->dev, "%s\n", __func__);
 #endif
-	return 0;
 }
 
 static const struct platform_device_id s2mpb02_pmic_id[] = {

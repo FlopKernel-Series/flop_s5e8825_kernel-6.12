@@ -982,7 +982,7 @@ static int xhci_exynos_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int xhci_exynos_remove(struct platform_device *dev)
+static void xhci_exynos_remove(struct platform_device *dev)
 {
 	struct xhci_hcd_exynos *xhci_exynos = platform_get_drvdata(dev);
 	struct usb_hcd	*hcd = xhci_exynos->hcd;
@@ -1079,7 +1079,6 @@ static int xhci_exynos_remove(struct platform_device *dev)
 	g_xhci_exynos_audio->ir->ir_set = NULL;
 	g_xhci_exynos = NULL;
 
-	return 0;
 }
 
 extern u32 otg_is_connect(void);

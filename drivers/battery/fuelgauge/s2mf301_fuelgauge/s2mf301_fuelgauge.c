@@ -2578,14 +2578,13 @@ err_parse_dt_nomem:
 	return ret;
 }
 
-static int s2mf301_fuelgauge_remove(struct platform_device *pdev)
+static void s2mf301_fuelgauge_remove(struct platform_device *pdev)
 {
 	struct s2mf301_fuelgauge_data *fuelgauge = platform_get_drvdata(pdev);
 
 	if (fuelgauge->pdata->fuel_alert_soc >= 0)
 		device_init_wakeup(&fuelgauge->i2c->dev, false);
 
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_PM)

@@ -202,7 +202,7 @@ err_pdata:
 	return ret;
 }
 
-static int dc_vib_remove(struct platform_device *pdev)
+static void dc_vib_remove(struct platform_device *pdev)
 {
 	struct dc_vib_drvdata *ddata = platform_get_drvdata(pdev);
 
@@ -210,7 +210,6 @@ static int dc_vib_remove(struct platform_device *pdev)
 	if (ddata->pdata->regulator) {
 		regulator_put(ddata->pdata->regulator);
 	}
-	return 0;
 }
 
 #if defined(CONFIG_OF)

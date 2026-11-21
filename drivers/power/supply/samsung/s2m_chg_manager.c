@@ -2513,9 +2513,8 @@ err_bat_free:
 	return ret;
 }
 
-static int s2m_chg_manager_remove(struct platform_device *pdev)
+static void s2m_chg_manager_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_PM)

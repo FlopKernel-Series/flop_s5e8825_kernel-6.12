@@ -2434,7 +2434,7 @@ err_enable_ipclk:
 	return ret;
 }
 
-static int exynos_i3c_hci_remove(struct platform_device *pdev)
+static void exynos_i3c_hci_remove(struct platform_device *pdev)
 {
 	struct exynos_i3c_hci_master *master = platform_get_drvdata(pdev);
 
@@ -2443,7 +2443,6 @@ static int exynos_i3c_hci_remove(struct platform_device *pdev)
 	clk_disable_unprepare(master->ipclk);
 	clk_disable_unprepare(master->gate_clk);
 
-	return 0;
 }
 
 

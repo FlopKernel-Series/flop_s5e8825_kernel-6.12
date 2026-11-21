@@ -1386,7 +1386,7 @@ err_res_mem:
 }
 
 /* Remove the driver */
-static int mfc_remove(struct platform_device *pdev)
+static void mfc_remove(struct platform_device *pdev)
 {
 	struct mfc_dev *dev = platform_get_drvdata(pdev);
 
@@ -1413,7 +1413,6 @@ static int mfc_remove(struct platform_device *pdev)
 	mfc_dev_deinit_memlog(dev);
 
 	mfc_dev_info("--MFC remove\n");
-	return 0;
 }
 
 static void mfc_shutdown(struct platform_device *pdev)

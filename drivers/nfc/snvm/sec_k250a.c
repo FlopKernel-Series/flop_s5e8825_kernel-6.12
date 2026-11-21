@@ -479,13 +479,12 @@ static int k250a_platform_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int k250a_platform_remove(struct platform_device *pdev)
+static void k250a_platform_remove(struct platform_device *pdev)
 {
 	INFO("Entry : %s\n", __func__);
 
 	mutex_destroy(&(g_k250a.platform_lock));
 
-	return 0;
 }
 
 static const struct of_device_id k250a_secure_match_table[] = {

@@ -277,13 +277,12 @@ err_of_populate:
 	return ret;
 }
 
-static int s2mpu13_adc_remove(struct platform_device *pdev)
+static void s2mpu13_adc_remove(struct platform_device *pdev)
 {
 	struct iio_dev *indio_dev = platform_get_drvdata(pdev);
 
 	device_for_each_child(&indio_dev->dev, NULL, s2mpu13_adc_remove_devices);
 
-	return 0;
 }
 
 static struct platform_driver s2mpu13_adc_driver = {

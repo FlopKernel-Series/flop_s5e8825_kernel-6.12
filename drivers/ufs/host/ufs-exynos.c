@@ -2329,7 +2329,7 @@ out:
 	return ret;
 }
 
-static int exynos_ufs_remove(struct platform_device *pdev)
+static void exynos_ufs_remove(struct platform_device *pdev)
 {
 	struct exynos_ufs *ufs = dev_get_platdata(&pdev->dev);
 	struct ufs_hba *hba =  platform_get_drvdata(pdev);
@@ -2358,7 +2358,6 @@ static int exynos_ufs_remove(struct platform_device *pdev)
 #if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
 	ufs_sec_remove_features(hba);
 #endif
-	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP

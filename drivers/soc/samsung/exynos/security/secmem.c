@@ -314,11 +314,10 @@ out:
 	return 0;
 }
 
-static int exynos_secmem_remove(struct platform_device *pdev)
+static void exynos_secmem_remove(struct platform_device *pdev)
 {
 	secmem_dev = &(pdev->dev);
 
-	return 0;
 }
 
 static const struct of_device_id exynos_secmem_of_match_table[] = {

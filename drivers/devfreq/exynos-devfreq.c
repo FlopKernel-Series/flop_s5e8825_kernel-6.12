@@ -2790,7 +2790,7 @@ err_data:
 	return ret;
 }
 
-static int exynos_devfreq_remove(struct platform_device *pdev)
+static void exynos_devfreq_remove(struct platform_device *pdev)
 {
 	struct exynos_devfreq_data *data = platform_get_drvdata(pdev);
 #if defined(CONFIG_EXYNOS_DVFS_MANAGER) || defined(CONFIG_EXYNOS_DVFS_MANAGER_MODULE)
@@ -2831,7 +2831,6 @@ static int exynos_devfreq_remove(struct platform_device *pdev)
 	mutex_destroy(&data->lock);
 	kfree(data);
 
-	return 0;
 }
 
 static struct platform_device_id exynos_devfreq_driver_ids[] = {

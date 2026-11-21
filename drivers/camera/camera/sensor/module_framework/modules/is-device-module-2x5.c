@@ -397,13 +397,12 @@ p_err:
 	return ret;
 }
 
-static int sensor_module_2x5_remove(struct platform_device *pdev)
+static void sensor_module_2x5_remove(struct platform_device *pdev)
 {
 	int ret = 0;
 
 	info("%s\n", __func__);
 
-	return ret;
 }
 
 static const struct of_device_id exynos_is_sensor_module_2x5_match[] = {

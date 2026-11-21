@@ -1930,10 +1930,9 @@ static int sec_vibrator_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int sec_vibrator_remove(struct platform_device *pdev)
+static void sec_vibrator_remove(struct platform_device *pdev)
 {
 	kfree(s_v_pdata);
-	return 0;
 }
 
 static const struct of_device_id sec_vibrator_id[] = {

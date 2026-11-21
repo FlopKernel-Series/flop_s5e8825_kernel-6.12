@@ -1274,7 +1274,7 @@ err_rtc_init_reg:
 	return ret;
 }
 
-static int s2m_rtc_remove(struct platform_device *pdev)
+static void s2m_rtc_remove(struct platform_device *pdev)
 {
 	struct s2m_rtc_info *info = platform_get_drvdata(pdev);
 
@@ -1290,7 +1290,6 @@ static int s2m_rtc_remove(struct platform_device *pdev)
 #endif
 	wakeup_source_unregister(rtc_ws);
 
-	return 0;
 }
 
 static void s2m_rtc_shutdown(struct platform_device *pdev)

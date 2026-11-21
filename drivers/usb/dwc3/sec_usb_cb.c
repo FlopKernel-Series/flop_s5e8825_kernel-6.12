@@ -127,9 +127,8 @@ static int sec_usb_cb_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int sec_usb_cb_remove(struct platform_device *pdev)
+static void sec_usb_cb_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

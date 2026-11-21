@@ -376,7 +376,7 @@ out:
 	return ret;
 }
 
-static int exynos_tzasc_remove(struct platform_device *pdev)
+static void exynos_tzasc_remove(struct platform_device *pdev)
 {
 	struct tzasc_info_data *data = platform_get_drvdata(pdev);
 	int i;
@@ -402,7 +402,6 @@ static int exynos_tzasc_remove(struct platform_device *pdev)
 	data->irqcnt = 0;
 	data->info_flag = 0;
 
-	return 0;
 }
 
 static const struct of_device_id exynos_tzasc_of_match_table[] = {

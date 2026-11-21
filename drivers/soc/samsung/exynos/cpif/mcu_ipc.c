@@ -582,9 +582,8 @@ fail:
 	return err;
 }
 
-static int cp_mbox_remove(struct platform_device *pdev)
+static void cp_mbox_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static int cp_mbox_suspend(struct device *dev)

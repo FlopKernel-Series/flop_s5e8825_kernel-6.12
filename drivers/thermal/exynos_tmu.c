@@ -1133,7 +1133,7 @@ err_sensor:
 	return ret;
 }
 
-static int exynos_tmu_remove(struct platform_device *pdev)
+static void exynos_tmu_remove(struct platform_device *pdev)
 {
 	struct exynos_tmu_data *data = platform_get_drvdata(pdev);
 	struct thermal_zone_device *tzd = data->tzd;
@@ -1149,7 +1149,6 @@ static int exynos_tmu_remove(struct platform_device *pdev)
 	if (!IS_ERR(data->regulator))
 		regulator_disable(data->regulator);
 
-	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP

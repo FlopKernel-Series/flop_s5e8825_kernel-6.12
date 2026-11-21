@@ -987,7 +987,7 @@ out:
 	return ret;
 }
 
-static int exynos_s2mpu_remove(struct platform_device *pdev)
+static void exynos_s2mpu_remove(struct platform_device *pdev)
 {
 	struct s2mpu_info_data *data = platform_get_drvdata(pdev);
 	int i;
@@ -1006,7 +1006,6 @@ static int exynos_s2mpu_remove(struct platform_device *pdev)
 	pm_qos_sss.qos_count = 0;
 #endif
 
-	return 0;
 }
 
 static const struct of_device_id exynos_s2mpu_of_match_table[] = {

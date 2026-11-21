@@ -174,7 +174,7 @@ err_get_slave_addr:
 	return ret;
 }
 
-int camerapp_pd_mgr_remove(struct platform_device *pdev)
+void camerapp_pd_mgr_remove(struct platform_device *pdev)
 {
 	pm_runtime_disable(&pdev->dev);
 
@@ -183,7 +183,6 @@ int camerapp_pd_mgr_remove(struct platform_device *pdev)
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, pd_mgr);
 
-	return 0;
 }
 
 void camerapp_pd_mgr_shutdown(struct platform_device *pdev)

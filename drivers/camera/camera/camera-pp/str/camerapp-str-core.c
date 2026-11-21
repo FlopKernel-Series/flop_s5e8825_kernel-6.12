@@ -465,7 +465,7 @@ err_exit:
 	return ret;
 }
 
-static int str_remove(struct platform_device *pdev)
+static void str_remove(struct platform_device *pdev)
 {
 	struct str_core *core = platform_get_drvdata(pdev);
 
@@ -475,7 +475,6 @@ static int str_remove(struct platform_device *pdev)
 
 	_str_clk_put(core);
 
-	return 0;
 }
 
 static void str_shutdown(struct platform_device *pdev)

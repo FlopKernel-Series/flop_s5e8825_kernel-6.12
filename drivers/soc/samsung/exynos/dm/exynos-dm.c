@@ -1430,7 +1430,7 @@ err_device:
 	return ret;
 }
 
-static int exynos_dm_remove(struct platform_device *pdev)
+static void exynos_dm_remove(struct platform_device *pdev)
 {
 	struct exynos_dm_device *dm = platform_get_drvdata(pdev);
 
@@ -1438,7 +1438,6 @@ static int exynos_dm_remove(struct platform_device *pdev)
 	mutex_destroy(&dm->lock);
 	kfree(dm);
 
-	return 0;
 }
 
 static struct platform_device_id exynos_dm_driver_ids[] = {

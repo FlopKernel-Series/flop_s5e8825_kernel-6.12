@@ -344,7 +344,7 @@ err1:
 	return ret;
 }
 
-static int vib_info_remove(struct platform_device *pdev)
+static void vib_info_remove(struct platform_device *pdev)
 {
 	struct vib_info_driver_data *ddata = dev_get_drvdata(&pdev->dev);
 	struct vib_info_platform_data *pdata;
@@ -358,7 +358,6 @@ static int vib_info_remove(struct platform_device *pdev)
 		kfree(pdata->haptic_intensities);
 		kfree(pdata->intensities);
 	}
-	return 0;
 }
 
 #ifdef CONFIG_OF

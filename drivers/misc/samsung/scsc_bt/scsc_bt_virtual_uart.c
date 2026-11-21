@@ -220,7 +220,7 @@ static int scsc_bt_virtual_serial_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int scsc_bt_virtual_serial_remove(struct platform_device *dev)
+static void scsc_bt_virtual_serial_remove(struct platform_device *dev)
 {
 	struct uart_port *port = dev_get_drvdata(&dev->dev);
 
@@ -228,7 +228,6 @@ static int scsc_bt_virtual_serial_remove(struct platform_device *dev)
 
 	uart_remove_one_port(&scsc_bt_virser_drv, port);
 
-	return 0;
 }
 
 static const struct of_device_id scsc_bt_virtaul_serial[] = {

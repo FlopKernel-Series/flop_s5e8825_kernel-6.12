@@ -810,9 +810,8 @@ static int s2mu106_led_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int s2mu106_led_remove(struct platform_device *pdev)
+static void s2mu106_led_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static void s2mu106_led_shutdown(struct platform_device *pdev)

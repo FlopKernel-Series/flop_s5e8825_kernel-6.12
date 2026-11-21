@@ -57,9 +57,8 @@ static int sec_mmc_driver_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int sec_mmc_driver_remove(struct platform_device *pdev)
+static void sec_mmc_driver_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static const struct of_device_id sec_mmc_driver_match[] = {

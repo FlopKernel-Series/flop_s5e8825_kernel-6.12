@@ -535,7 +535,7 @@ static int npu_hwdev_runtime_resume(struct device *dev)
 }
 #endif
 
-static int npu_hwdev_remove(struct platform_device *pdev)
+static void npu_hwdev_remove(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct device *dev;
@@ -549,7 +549,6 @@ static int npu_hwdev_remove(struct platform_device *pdev)
 	npu_clk_put(&hdev->clks, dev);
 
 	probe_info("completed\n");
-	return ret;
 }
 
 static const struct dev_pm_ops npu_hwdev_pm_ops = {

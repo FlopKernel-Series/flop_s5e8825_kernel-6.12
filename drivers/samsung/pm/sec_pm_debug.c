@@ -178,14 +178,13 @@ err_create_sysfs:
 	return ret;
 }
 
-static int sec_pm_debug_remove(struct platform_device *pdev)
+static void sec_pm_debug_remove(struct platform_device *pdev)
 {
 	struct sec_pm_debug_info *info = platform_get_drvdata(pdev);
 
 	cancel_delayed_work_sync(&ws_log_work);
 
 	sec_device_destroy(info->sec_pm_dev->devt);
-	return 0;
 }
 
 static const struct of_device_id sec_pm_debug_match[] = {

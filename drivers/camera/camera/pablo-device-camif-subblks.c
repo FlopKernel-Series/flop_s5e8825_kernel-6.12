@@ -340,7 +340,7 @@ static int pablo_camif_subblks_pdev_probe(struct platform_device *pdev)
 	return data->probe(pdev, data);
 }
 
-static int pablo_camif_subblks_pdev_remove(struct platform_device *pdev)
+static void pablo_camif_subblks_pdev_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	const struct of_device_id *of_id;
@@ -348,11 +348,10 @@ static int pablo_camif_subblks_pdev_remove(struct platform_device *pdev)
 
 	of_id = of_match_device(of_match_ptr(pablo_camif_subblks_of_table), dev);
 	if (!of_id)
-		return -EINVAL;
+		return;
 
 	data = (struct pablo_camif_subblks_data *)of_id->data;
 
-	return data->remove(pdev, data);
 }
 
 struct platform_driver pablo_camif_subblks_driver = {

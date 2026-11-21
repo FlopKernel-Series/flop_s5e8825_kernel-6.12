@@ -1407,7 +1407,7 @@ err_charger_free:
 	return ret;
 }
 
-static int sec_direct_charger_remove(struct platform_device *pdev)
+static void sec_direct_charger_remove(struct platform_device *pdev)
 {
 	struct sec_direct_charger_info *charger = platform_get_drvdata(pdev);
 
@@ -1423,7 +1423,6 @@ static int sec_direct_charger_remove(struct platform_device *pdev)
 
 	pr_info("%s: --\n", __func__);
 
-	return 0;
 }
 
 static int sec_direct_charger_suspend(struct device *dev)

@@ -1301,7 +1301,7 @@ err_pdata:
 	return ret;
 }
 
-static int s2mpu13_pmic_remove(struct platform_device *pdev)
+static void s2mpu13_pmic_remove(struct platform_device *pdev)
 {
 	struct s2mpu13_info *s2mpu13 = platform_get_drvdata(pdev);
 #if IS_ENABLED(CONFIG_DRV_SAMSUNG_PMIC)
@@ -1314,7 +1314,6 @@ static int s2mpu13_pmic_remove(struct platform_device *pdev)
 	pmic_device_destroy(s2mpu13_pmic->devt);
 #endif
 	mutex_destroy(&s2mpu13->lock);
-	return 0;
 }
 
 static void s2mpu13_pmic_shutdown(struct platform_device *pdev)

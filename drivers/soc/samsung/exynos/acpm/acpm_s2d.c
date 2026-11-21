@@ -184,7 +184,7 @@ err_s2d_info:
 	return ret;
 }
 
-static int exynos_acpm_s2d_remove(struct platform_device *pdev)
+static void exynos_acpm_s2d_remove(struct platform_device *pdev)
 {
 	struct scan2dram_info *acpm_s2d = platform_get_drvdata(pdev);
 
@@ -193,7 +193,6 @@ static int exynos_acpm_s2d_remove(struct platform_device *pdev)
 	kfree(acpm_s2d);
 	platform_set_drvdata(pdev, NULL);
 
-	return 0;
 }
 
 static const struct of_device_id exynos_acpm_s2d_match[] = {

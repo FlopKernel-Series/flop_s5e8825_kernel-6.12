@@ -306,9 +306,8 @@ static int sec_abc_resume(struct device *dev)
 	return 0;
 }
 
-static int sec_abc_remove(struct platform_device *pdev)
+static void sec_abc_remove(struct platform_device *pdev)
 {
-	return 0;
 }
 
 static const struct dev_pm_ops sec_abc_pm = {

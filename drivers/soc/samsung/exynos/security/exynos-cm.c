@@ -742,11 +742,10 @@ static int exynos_cm_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int exynos_cm_remove(struct platform_device *pdev)
+static void exynos_cm_remove(struct platform_device *pdev)
 {
 	/* Do nothing */
 
-	return 0;
 }
 
 static const struct of_device_id exynos_cm_of_match_table[] = {

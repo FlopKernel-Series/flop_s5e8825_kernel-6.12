@@ -2487,7 +2487,7 @@ static const struct of_device_id s2mf301_muic_match_table[] = {
 	{},
 };
 
-static int s2mf301_muic_remove(struct platform_device *pdev)
+static void s2mf301_muic_remove(struct platform_device *pdev)
 {
 	struct s2mf301_muic_data *muic_data = platform_get_drvdata(pdev);
 
@@ -2504,7 +2504,6 @@ static int s2mf301_muic_remove(struct platform_device *pdev)
 		kfree(muic_data->sdata);
 	}
 
-	return 0;
 }
 
 static void s2mf301_muic_shutdown(struct platform_device *pdev)

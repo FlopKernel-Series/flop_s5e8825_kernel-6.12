@@ -1886,7 +1886,7 @@ err_parse_dt_nomem:
 	return ret;
 }
 
-static int sm5714_charger_remove(struct platform_device *pdev)
+static void sm5714_charger_remove(struct platform_device *pdev)
 {
 	struct sm5714_charger_data *charger =
 		platform_get_drvdata(pdev);
@@ -1897,7 +1897,6 @@ static int sm5714_charger_remove(struct platform_device *pdev)
 
 	kfree(charger);
 
-	return 0;
 }
 
 #if defined CONFIG_PM

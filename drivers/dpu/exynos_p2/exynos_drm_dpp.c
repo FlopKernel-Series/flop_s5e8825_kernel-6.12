@@ -1134,7 +1134,7 @@ fail:
 	return ret;
 }
 
-static int dpp_remove(struct platform_device *pdev)
+static void dpp_remove(struct platform_device *pdev)
 {
 	struct dpp_device *dpp = platform_get_drvdata(pdev);
 
@@ -1148,7 +1148,6 @@ static int dpp_remove(struct platform_device *pdev)
 	iounmap(dpp->regs.dpp_base_regs);
 	iounmap(dpp->regs.dma_base_regs);
 
-	return 0;
 }
 
 struct platform_driver dpp_driver = {
