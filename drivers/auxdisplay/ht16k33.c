@@ -26,6 +26,7 @@
 #include <linux/map_to_14segment.h>
 
 #include <linux/unaligned.h>
+#include <linux/of_device.h>
 
 #include "line-display.h"
 
