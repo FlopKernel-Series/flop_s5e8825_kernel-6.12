@@ -1003,7 +1003,7 @@ static void dbg_snapshot_print_irq(void)
 			continue;
 
 		for_each_possible_cpu(cpu)
-			irq_stat += *per_cpu_ptr(desc->kstat_irqs, cpu);
+			irq_stat += per_cpu_ptr(desc->kstat_irqs, cpu)->cnt;
 
 		if (!irq_stat)
 			continue;

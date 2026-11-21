@@ -18,6 +18,7 @@
 #include <linux/io.h>
 #include <soc/samsung/exynos-pmu-if.h>
 #include <linux/slab.h>
+#include <linux/of.h>
 
 /**
  * "pmureg" has the mapped base address of PMU(Power Management Unit)

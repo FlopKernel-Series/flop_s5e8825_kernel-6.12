@@ -8,7 +8,9 @@
 #include <linux/ipv6.h>
 #include <linux/rcupdate.h>
 #include <linux/sched/isolation.h>
+#include <linux/netdevice.h>
 #include <net/netdev_rx_queue.h>
+#include <net/rps.h>
 #include "modem_prj.h"
 #include "modem_utils.h"
 #include "link_device_memory.h"

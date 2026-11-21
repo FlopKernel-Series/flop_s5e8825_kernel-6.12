@@ -34,6 +34,7 @@
 #if IS_ENABLED(CONFIG_SEC_PM_DEBUG)
 #include <linux/uaccess.h>
 #include <linux/proc_fs.h>
+#include <linux/vmalloc.h>
 
 static bool sec_log_full;
 #endif

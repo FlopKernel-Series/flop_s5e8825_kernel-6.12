@@ -8,7 +8,7 @@
 #ifndef EXYNOS_PERF_INTERNAL_H
 #define EXYNOS_PERF_TNTERNAL_H __FILE__
 
-#include "../../../../kernel/sched/ems/ems.h"
+#include <soc/samsung/ems.h>
 #include "../../../../drivers/thermal/exynos_tmu.h"
 
 #ifndef CONFIG_VENDOR_NR_CPUS

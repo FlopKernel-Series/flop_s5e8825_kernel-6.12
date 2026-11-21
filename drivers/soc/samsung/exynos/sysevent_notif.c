@@ -233,7 +233,7 @@ void *sysevent_notif_add_sysevent(const char *sysevent_name)
 		return ERR_PTR(-EINVAL);
 	}
 
-	strlcpy(sysevent->name, sysevent_name, ARRAY_SIZE(sysevent->name));
+	strscpy(sysevent->name, sysevent_name, ARRAY_SIZE(sysevent->name));
 
 	srcu_init_notifier_head(&sysevent->sysevent_notif_rcvr_list);
 

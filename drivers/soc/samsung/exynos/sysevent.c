@@ -268,7 +268,7 @@ static ssize_t firmware_name_store(struct device *dev,
 
 	pr_info("Changing sysevent fw_name to %s\n", buf);
 	mutex_lock(&track->lock);
-	strlcpy(sysevent->desc->fw_name, buf,
+	strscpy(sysevent->desc->fw_name, buf,
 			min(count + 1, sizeof(sysevent->desc->fw_name)));
 	mutex_unlock(&track->lock);
 	return orig_count;
@@ -673,7 +673,7 @@ int sysevent_set_fwname(const char *name, const char *fw_name)
 		return -EINVAL;
 
 	pr_debug("Changing sysevent [%s] fw_name to [%s]\n", name, fw_name);
-	strlcpy(sysevent->desc->fw_name, fw_name,
+	strscpy(sysevent->desc->fw_name, fw_name,
 		sizeof(sysevent->desc->fw_name));
 
 	return 0;
@@ -703,7 +703,7 @@ void *__sysevent_get(const char *name, const char *fw_name)
 	if (!sysevent->count) {
 		if (fw_name) {
 			pr_info("Changing sysevent fw_name to %s\n", fw_name);
-			strlcpy(sysevent->desc->fw_name, fw_name,
+			strscpy(sysevent->desc->fw_name, fw_name,
 				sizeof(sysevent->desc->fw_name));
 		}
 		ret = sysevent_start(sysevent);
@@ -1270,7 +1270,7 @@ struct sysevent_device *sysevent_register(struct sysevent_desc *desc)
 	sysevent->dev.bus = &sysevent_bus_type;
 	sysevent->dev.release = sysevent_device_release;
 	sysevent->notif_state = -1;
-	strlcpy(sysevent->desc->fw_name, desc->name,
+	strscpy(sysevent->desc->fw_name, desc->name,
 			sizeof(sysevent->desc->fw_name));
 
 	sysevent->notify = sysevent_notif_add_sysevent(desc->name);

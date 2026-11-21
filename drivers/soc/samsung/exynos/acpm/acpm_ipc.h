@@ -121,6 +121,6 @@ extern void timestamp_write(void);
 extern void acpm_ramdump(void);
 extern void acpm_fw_log_level(unsigned int on);
 
-extern int acpm_ipc_remove(struct platform_device *pdev);
+extern void acpm_ipc_remove(struct platform_device *pdev);
 extern int acpm_ipc_probe(struct platform_device *pdev);
 #endif

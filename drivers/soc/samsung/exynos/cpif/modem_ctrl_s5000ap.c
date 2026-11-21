@@ -173,14 +173,14 @@ static int get_system_rev(struct device_node *np)
 	int value, cnt, gpio_cnt;
 	unsigned int gpio_hw_rev, hw_rev = 0;
 
-	gpio_cnt = of_gpio_count(np);
+	gpio_cnt = of_gpio_named_count(np, "gpios");
 	if (gpio_cnt < 0) {
 		mif_err("failed to get gpio_count from DT(%d)\n", gpio_cnt);
 		return 0;
 	}
 
 	for (cnt = 0; cnt < gpio_cnt; cnt++) {
-		gpio_hw_rev = of_get_gpio(np, cnt);
+		gpio_hw_rev = of_get_named_gpio(np, "gpios", cnt);
 		if (!gpio_is_valid(gpio_hw_rev)) {
 			mif_err("gpio_hw_rev%d: Invalied gpio\n", cnt);
 			return -EINVAL;

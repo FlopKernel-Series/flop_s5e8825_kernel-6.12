@@ -494,7 +494,7 @@ disable_domain_cpus(struct ufc_domain *ufc_dom)
 		return;
 
 	cpumask_andnot(&ufc.active_cpus, &ufc.active_cpus, &ufc_dom->cpus);
-	ecs_request("UFC", &ufc.active_cpus);
+	ecs_request("UFC", &ufc.active_cpus, ECS_MAX);
 }
 
 static void
@@ -504,7 +504,7 @@ enable_domain_cpus(struct ufc_domain *ufc_dom)
 		return;
 
 	cpumask_or(&ufc.active_cpus, &ufc.active_cpus, &ufc_dom->cpus);
-	ecs_request("UFC", &ufc.active_cpus);
+	ecs_request("UFC", &ufc.active_cpus, ECS_MAX);
 }
 
 unsigned int get_cpufreq_max_limit(void)
@@ -1772,7 +1772,7 @@ static int exynos_ufc_init(struct platform_device *pdev)
 	}
 
 	cpumask_setall(&ufc.active_cpus);
-	if (ecs_request_register("UFC", &ufc.active_cpus)) {
+	if (ecs_request_register("UFC", &ufc.active_cpus, ECS_MAX)) {
 		pr_err("exynos-ufc: Failed to register ecs\n");
 		ufc_free_all();
 		return 0;

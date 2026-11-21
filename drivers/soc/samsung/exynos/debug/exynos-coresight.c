@@ -534,47 +534,45 @@ static struct notifier_block cs_halt_pm_blk = {
 
 static int exynos_cs_parsing_dt(struct device_node *np)
 {
-	struct property *prop;
-	const __be32 *cur;
 	u32 val, i = 0;
 	int ret;
 
 	if (dbg_snapshot_get_sjtag_status())
 		return -EACCES;
 
-	of_property_for_each_u32(np, "dbg_base", prop, cur, val) {
+	of_property_for_each_u32(np, "dbg_base", val) {
 		if (!val)
 			return -EINVAL;
 		ecs_info->dbg_base[i] = ioremap(val, SZ_4K);
 		if (!ecs_info->dbg_base[i]) {
-			dev_err(ecs_info->dev, "fail property %s(%d) ioremap\n",
-					prop->name, i);
+			dev_err(ecs_info->dev, "fail dbg_base(%d) ioremap\n",
+					i);
 			return -ENOMEM;
 		}
 		i++;
 	}
 
 	i = 0;
-	of_property_for_each_u32(np, "cti_base", prop, cur, val) {
+	of_property_for_each_u32(np, "cti_base", val) {
 		if (!val)
 			return -EINVAL;
 		ecs_info->cti_base[i] = ioremap(val, SZ_4K);
 		if (!ecs_info->dbg_base[i]) {
-			dev_err(ecs_info->dev, "fail property %s(%d) ioremap\n",
-					prop->name, i);
+			dev_err(ecs_info->dev, "fail cti_base(%d) ioremap\n",
+					i);
 			return -ENOMEM;
 		}
 		i++;
 	}
 
 	i = 0;
-	of_property_for_each_u32(np, "pmu_base", prop, cur, val) {
+	of_property_for_each_u32(np, "pmu_base", val) {
 		if (!val)
 			return -EINVAL;
 		ecs_info->pmu_base[i] = ioremap(val, SZ_4K);
 		if (!ecs_info->dbg_base[i]) {
-			dev_err(ecs_info->dev, "fail property %s(%d) ioremap\n",
-					prop->name, i);
+			dev_err(ecs_info->dev, "fail pmu_base(%d) ioremap\n",
+					i);
 			return -ENOMEM;
 		}
 		i++;

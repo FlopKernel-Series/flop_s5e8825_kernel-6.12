@@ -609,7 +609,9 @@ static void dbg_snapshot_dump_one_task_info(struct task_struct *tsk, bool is_mai
 
 static inline struct task_struct *get_next_thread(struct task_struct *tsk)
 {
-	return container_of(tsk->thread_group.next, struct task_struct, thread_group);
+	return list_next_or_null_rcu(&tsk->signal->thread_head,
+				     &tsk->thread_node,
+				     struct task_struct, thread_node);
 }
 
 static void dbg_snapshot_dump_task_info(void)
@@ -639,7 +641,7 @@ static void dbg_snapshot_dump_task_info(void)
 	while (curr_tsk) {
 		dbg_snapshot_dump_one_task_info(curr_tsk,  true);
 		/* threads */
-		if (curr_tsk->thread_group.next != NULL) {
+		if (!thread_group_empty(curr_tsk)) {
 			frst_thr = get_next_thread(curr_tsk);
 			curr_thr = frst_thr;
 			if (frst_thr != curr_tsk) {
@@ -1440,8 +1442,6 @@ static struct input_handler dbg_snapshot_input_handler = {
 static void set_smc_pre_reading_ecc_sysreg(struct device *dev)
 {
 	struct device_node *np = dev->of_node;
-	struct property *prop;
-	const __be32 *cur;
 	int count, idx;
 	u32 val;
 
@@ -1450,7 +1450,7 @@ static void set_smc_pre_reading_ecc_sysreg(struct device *dev)
 		return;
 
 	idx = 0;
-	of_property_for_each_u32(np, "wa-pre-reading-ecc-sysreg", prop, cur, val)
+	of_property_for_each_u32(np, "wa-pre-reading-ecc-sysreg", val)
 		smc_pre_reading_ecc_sysreg[idx++] = (unsigned long)val;
 
 	dev_info(dev, "%s:[%lx][%lx][%lx][%lx]\n", __func__, smc_pre_reading_ecc_sysreg[0],

@@ -92,8 +92,8 @@ int dbg_snapshot_qd_add_region(void *v_entry, u32 attr)
 	}
 
 	qd_entry = &dss_qd_table->entry[entries];
-	strlcpy(qd_entry->name, entry->name, sizeof(qd_entry->name));
-	strlcpy(qd_entry->struct_name, entry->struct_name, sizeof(qd_entry->struct_name));
+	strscpy(qd_entry->name, entry->name, sizeof(qd_entry->name));
+	strscpy(qd_entry->struct_name, entry->struct_name, sizeof(qd_entry->struct_name));
 	qd_entry->virt_addr = entry->virt_addr;
 	qd_entry->phys_addr = entry->phys_addr;
 	qd_entry->size = entry->size;
@@ -133,9 +133,9 @@ static void register_dss_log_item(void)
 		item = (struct dbg_snapshot_log_item *)
 			dbg_snapshot_log_get_item_by_index(i);
 		if (item->entry.enabled) {
-			strlcpy(qd_entry.name, item->name,
+			strscpy(qd_entry.name, item->name,
 					sizeof(qd_entry.name));
-			strlcpy(qd_entry.struct_name, item->name,
+			strscpy(qd_entry.struct_name, item->name,
 					sizeof(qd_entry.struct_name));
 			qd_entry.virt_addr = item->entry.vaddr;
 			qd_entry.phys_addr = item->entry.paddr;
@@ -170,7 +170,7 @@ static void register_dss_item(void)
 
 			if (i == DSS_ITEM_BACKTRACE_ID)
 				attr |= DSS_QD_ATTR_SKIP_ENCRYPT;
-			strlcpy(qd_entry.name, item->name,
+			strscpy(qd_entry.name, item->name,
 					sizeof(qd_entry.name));
 			qd_entry.struct_name[0] = '\0';
 			qd_entry.virt_addr = item->entry.vaddr;

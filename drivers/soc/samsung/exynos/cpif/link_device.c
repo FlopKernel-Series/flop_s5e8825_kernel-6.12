@@ -317,7 +317,7 @@ static void link_trigger_cp_crash(struct mem_link_device *mld, u32 crash_type,
 	}
 
 	if (reason && reason[0] != '\0')
-		strlcpy(ld->crash_reason.string, reason, CP_CRASH_INFO_SIZE);
+		strscpy(ld->crash_reason.string, reason, CP_CRASH_INFO_SIZE);
 
 set_type:
 	ld->crash_reason.type = crash_type;

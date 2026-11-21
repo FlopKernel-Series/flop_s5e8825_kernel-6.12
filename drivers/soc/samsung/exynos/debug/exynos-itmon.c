@@ -30,6 +30,7 @@
 #include "exynos-itmon-local.h"
 
 #include <linux/sec_debug_built.h>
+#include <linux/vmalloc.h>
 
 static struct itmon_policy err_policy[] = {
 	[TMOUT]		= {"err_tmout",		0, 0, 0, false},

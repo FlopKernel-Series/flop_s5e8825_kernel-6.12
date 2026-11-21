@@ -8,6 +8,7 @@
 #include <soc/samsung/cal-if.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/vmalloc.h>
 #include <soc/samsung/fvmap.h>
 
 #include "cmucal.h"
