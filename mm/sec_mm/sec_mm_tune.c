@@ -59,7 +59,7 @@ static void sec_mm_migration_target_bypass(void *data,
 
 #ifdef CONFIG_SEC_MM_CUSTOMIZE_ZONE_PAGESET
 static void sec_mm_customize_zone_pageset(void *data, struct zone *zone,
-		int *new_high, int *new_batch)
+		int *new_high_min, int *new_high_max, int *new_batch)
 {
 	long nr_pages;
 	int batch;
@@ -71,7 +71,8 @@ static void sec_mm_customize_zone_pageset(void *data, struct zone *zone,
 	/* v5.10 kernel policy */
 	batch = (nr_pages >> 12) >= 43 ? 63 : 15;
 	*new_batch = batch;
-	*new_high = batch * 6;
+	*new_high_min = batch * 6;
+	*new_high_max = batch * 6;
 }
 #endif
 

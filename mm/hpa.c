@@ -162,7 +162,7 @@ static bool is_movable_chunk(unsigned long start_pfn, unsigned int order, unsign
 		if (PageBuddy(page)) {
 			unsigned long freepage_order = buddy_order_unsafe(page);
 
-			if (freepage_order > 0 && freepage_order < MAX_ORDER)
+			if (freepage_order > 0 && freepage_order < MAX_PAGE_ORDER)
 				i += (1UL << freepage_order) - 1;
 
 			continue;
@@ -183,7 +183,7 @@ static bool is_movable_chunk(unsigned long start_pfn, unsigned int order, unsign
 			return false;
 		}
 
-		if (!page_mapping(page) && page_count(page) > page_mapcount(page)) {
+		if (!folio_mapping(page_folio(page)) && page_count(page) > folio_mapcount(page_folio(page))) {
 			status[HPA_SKIP_ANON_PINNED]++;
 			return false;
 		}
@@ -237,7 +237,7 @@ static struct page *alloc_freepage_one(struct zone *zone, unsigned int order,
 			continue;
 
 		for (current_order = order;
-		     current_order < MAX_ORDER; ++current_order) {
+		     current_order < MAX_PAGE_ORDER; ++current_order) {
 			area = &(zone->free_area[current_order]);
 
 			list_for_each_entry(page, &area->free_list[mt], lru) {

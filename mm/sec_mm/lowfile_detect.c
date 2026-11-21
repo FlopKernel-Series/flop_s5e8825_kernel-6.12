@@ -15,6 +15,7 @@
 #define MIN_FILE_SIZE_THR_GB	3
 
 static unsigned long min_file;
+static struct shrinker *mm_debug_shrinker;
 
 static unsigned long lowfile_count(struct shrinker *s,
 				struct shrink_control *sc)
@@ -33,9 +34,6 @@ static unsigned long lowfile_count(struct shrinker *s,
 	return 0; /* return 0 not to call to scan_objects */
 }
 
-static struct shrinker mm_debug_shrinker = {
-	.count_objects = lowfile_count,
-};
 
 void init_lowfile_detect(void)
 {
@@ -44,10 +42,15 @@ void init_lowfile_detect(void)
 	else
 		min_file = MB_TO_PAGES(MIN_FILE_SIZE_LOW);
 
-	register_shrinker(&mm_debug_shrinker, "mm_debug_shrinker");
+	mm_debug_shrinker = shrinker_alloc(0, "mm_debug_shrinker");
+	if (!mm_debug_shrinker)
+		return;
+
+	mm_debug_shrinker->count_objects = lowfile_count;
+	shrinker_register(mm_debug_shrinker);
 }
 
 void exit_lowfile_detect(void)
 {
-	unregister_shrinker(&mm_debug_shrinker);
+	shrinker_free(mm_debug_shrinker);
 }

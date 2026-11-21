@@ -7,6 +7,7 @@
  */
 
 #include <linux/dma-heap.h>
+#include <linux/workqueue.h>
 #include <linux/psi.h>
 #include <linux/mm.h>
 #include <linux/ratelimit.h>

@@ -2607,7 +2607,7 @@ static void set_recommended_min_free_kbytes(void)
 	int nr_zones = 0;
 	unsigned long recommended_min;
 
-	if (!hugepage_flags_enabled() || !raise_min_free_kbytes) {
+	if (!hugepage_global_enabled() || !raise_min_free_kbytes) {
 		calculate_min_free_kbytes();
 		goto update_wmarks;
 	}
