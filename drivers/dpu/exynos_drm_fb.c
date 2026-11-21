@@ -893,7 +893,6 @@ static struct drm_mode_config_helper_funcs exynos_drm_mode_config_helpers = {
 static const struct drm_mode_config_funcs exynos_drm_mode_config_funcs = {
 	.fb_create = exynos_user_fb_create,
 	.get_format_info = exynos_get_format_info,
-	.output_poll_changed = exynos_drm_output_poll_changed,
 	.atomic_check = exynos_atomic_check,
 	.atomic_commit = exynos_atomic_commit,
 };

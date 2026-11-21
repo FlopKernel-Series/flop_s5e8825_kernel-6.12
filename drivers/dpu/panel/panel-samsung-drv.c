@@ -1238,7 +1238,7 @@ static void exynos_panel_set_dqe_xml(struct device *dev, struct exynos_panel *ct
 	}
 
 	if (xml_suffix != NULL)
-		strlcpy(dqe->xml_suffix, xml_suffix, DQE_XML_SUFFIX_SIZE);
+		strscpy(dqe->xml_suffix, xml_suffix, DQE_XML_SUFFIX_SIZE);
 
 	panel_info(ctx, "DQE XML Suffix (%s)\n", dqe->xml_suffix);
 }

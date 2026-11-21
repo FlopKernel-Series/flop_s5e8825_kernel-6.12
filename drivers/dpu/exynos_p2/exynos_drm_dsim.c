@@ -11,7 +11,7 @@
  * option) any later version.
  */
 
-#include <asm/unaligned.h>
+#include <linux/unaligned.h>
 
 #include <drm/drm_of.h>
 #include <drm/drm_crtc_helper.h>
@@ -806,7 +806,7 @@ static int dsim_add_mipi_dsi_device(struct dsim_device *dsim)
 
 		name = of_get_property(node, "label", NULL);
 		if (name && !strcmp(name, panel_name)) {
-			strlcpy(info.type, name, sizeof(info.type));
+			strscpy(info.type, name, sizeof(info.type));
 			info.node = of_node_get(node);
 			mipi_dsi_device_register_full(&dsim->dsi_host, &info);
 

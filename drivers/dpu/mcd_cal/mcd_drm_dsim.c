@@ -11,7 +11,7 @@
  * option) any later version.
  */
 
-#include <asm/unaligned.h>
+#include <linux/unaligned.h>
 #include <linux/of.h>
 #include <exynos_drm_freq_hop.h>
 #include <exynos_drm_dsim.h>

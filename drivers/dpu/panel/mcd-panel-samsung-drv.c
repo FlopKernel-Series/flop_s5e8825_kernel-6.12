@@ -595,7 +595,7 @@ static int exynos_panel_attach_restrictions_property(struct drm_device *drm_dev,
                 __str_u32 temp;
 
                 if (pmode->exynos_mode.plane_cnt > 0) {
-                        strlcpy(temp.str, pmode->mode.name,
+                        strscpy(temp.str, pmode->mode.name,
                                         strlen(pmode->mode.name) + 1);
                         temp.val = pmode->exynos_mode.plane_cnt;
                         dpu_res_add_str_u32(&ptr, &size, DPU_RES_MODE_PLANE_CNT,

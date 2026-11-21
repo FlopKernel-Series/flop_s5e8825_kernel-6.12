@@ -11,7 +11,7 @@
  * option) any later version.
  */
 
-#include <asm/unaligned.h>
+#include <linux/unaligned.h>
 #include <drm/drm_of.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_panel.h>

@@ -119,11 +119,11 @@ is_event_repeated(const char *name, struct dpu_memlog_event *event, u32 flag)
 
 	if (event->repeat_cnt == 0) {
 		event->last_event_len = strlen(name);
-		strlcpy(event->last_event, name, event->last_event_len + 1);
+		strscpy(event->last_event, name, event->last_event_len + 1);
 	} else if (strncmp(event->last_event, name, event->last_event_len)) {
 		event->repeat_cnt = 1;
 		event->last_event_len = strlen(name);
-		strlcpy(event->last_event, name, event->last_event_len + 1);
+		strscpy(event->last_event, name, event->last_event_len + 1);
 		goto out;
 	}
 

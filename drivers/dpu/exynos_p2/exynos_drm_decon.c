@@ -1636,8 +1636,6 @@ static int decon_bind(struct device *dev, struct device *master, void *data)
 
 	priv->iommu_client = dev;
 
-	iommu_register_device_fault_handler(dev, dpu_sysmmu_fault_handler,
-			decon->crtc);
 
 #if IS_ENABLED(CONFIG_EXYNOS_ITMON)
 	decon->crtc->d.itmon_nb.notifier_call = dpu_itmon_notifier;
@@ -2052,7 +2050,7 @@ static int decon_parse_dt(struct decon_device *decon, struct device_node *np)
 
 	decon_parse_restriction(decon, np);
 	
-	of_property_for_each_u32(np, "connector", prop, cur, val)
+	of_property_for_each_u32(np, "connector", val)
 		decon->con_type |= val;
 
 	return 0;

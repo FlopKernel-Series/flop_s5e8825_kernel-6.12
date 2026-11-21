@@ -20,6 +20,7 @@
 #include <linux/sched.h>
 #include <linux/err.h>
 #include <linux/atomic.h>
+#include <linux/debugfs.h>
 #include <uapi/linux/sched/types.h>
 
 #include <dpu_trace.h>

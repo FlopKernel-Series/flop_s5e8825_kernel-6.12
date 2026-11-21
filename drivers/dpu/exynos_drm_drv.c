@@ -23,7 +23,7 @@
 #include <drm/drm_drv.h>
 #include <drm/drm_ioctl.h>
 #include <drm/drm_vblank.h>
-#include <drm/drm_fbdev_generic.h>
+#include <drm/drm_fbdev_dma.h>
 
 #include <exynos_drm_drv.h>
 #include <exynos_drm_fbdev.h>
@@ -697,7 +697,7 @@ static void exynos_drm_postclose(struct drm_device *dev, struct drm_file *file)
 	file->driver_priv = NULL;
 }
 
-static void exynos_drm_lastclose(struct drm_device *dev)
+static void __maybe_unused exynos_drm_lastclose(struct drm_device *dev)
 {
 	exynos_drm_fbdev_restore_mode(dev);
 }
@@ -717,7 +717,6 @@ static struct drm_driver exynos_drm_driver = {
 	.driver_features	   = DRIVER_MODESET | DRIVER_ATOMIC |
 				     DRIVER_RENDER | DRIVER_GEM,
 	.open			   = exynos_drm_open,
-	.lastclose		   = exynos_drm_lastclose,
 	.postclose		   = exynos_drm_postclose,
 	.dumb_create		   = exynos_drm_gem_dumb_create,
 	.dumb_map_offset	   = exynos_drm_gem_dumb_map_offset,
