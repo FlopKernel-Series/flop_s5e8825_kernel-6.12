@@ -27,6 +27,25 @@
 #include <linux/slab.h>
 #include "../../../../mm/slab.h"
 
+/* kmem_cache_cpu defs in mm/slub.c */
+struct kmem_cache_cpu {
+	union {
+		struct {
+			void **freelist;	/* Pointer to next available object */
+			unsigned long tid;	/* Globally unique transaction id */
+		};
+		freelist_aba_t freelist_tid;
+	};
+	struct slab *slab;	/* The slab from which we are allocating */
+#ifdef CONFIG_SLUB_CPU_PARTIAL
+	struct slab *partial;	/* Partially allocated slabs */
+#endif
+	local_lock_t lock;	/* Protects the fields above */
+#ifdef CONFIG_SLUB_STATS
+	unsigned int stat[NR_SLUB_STAT_ITEMS];
+#endif
+};
+
 #define OBJ_MAX 4
 #define BUF_MAX	256
 #define INDEX_NOT_FOUND		(-1)

@@ -35,6 +35,7 @@
 
 #include <linux/mutex.h>
 #include <linux/vmalloc.h>
+#include <linux/stacktrace.h>
 
 #include "sec_debug_internal.h"
 #include "sec_debug_extra_info_keys.c"

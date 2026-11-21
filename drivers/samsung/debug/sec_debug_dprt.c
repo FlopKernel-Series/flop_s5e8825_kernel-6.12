@@ -68,7 +68,7 @@ struct dprt_buf_data {
 	long size;
 };
 
-static struct block_device *sdg_bdev;
+static struct file *sdg_bdev;
 static const char *bdev_path;
 static struct dprt_header *part_header;
 static struct dprt_member members[DPRT_MAX_MEMBERS];
@@ -77,29 +77,15 @@ static int sdg_data_this_offset;
 
 static ssize_t sdg_part_read(void *buf, size_t bytes, loff_t pos)
 {
-	struct block_device *bdev;
-	struct file file;
-	struct kiocb kiocb;
-	struct iov_iter iter;
-	struct kvec iov = {.iov_base = buf, .iov_len = bytes};
-
-	bdev = sdg_bdev;
+	ssize_t ret;
 
 	pr_debug("%s: start\n", __func__);
 
-	memset(&file, 0, sizeof(struct file));
-	file.f_mapping = bdev->bd_inode->i_mapping;
-	file.f_flags = O_DSYNC | __O_SYNC | O_NOATIME;
-	file.f_inode = bdev->bd_inode;
-	file_ra_state_init(&file.f_ra, file.f_mapping);
-
-	init_sync_kiocb(&kiocb, &file);
-	kiocb.ki_pos = pos;
-	iov_iter_kvec(&iter, READ, &iov, 1, bytes);
+	ret = kernel_read(sdg_bdev, buf, bytes, &pos);
 
 	pr_debug("%s: end\n", __func__);
 
-	return generic_file_read_iter(&kiocb, &iter);
+	return ret;
 }
 
 static int sdg_part_load_header(void)
@@ -222,13 +208,13 @@ fail:
 
 static int init_sdg_bdev(void)
 {
-	struct block_device *bdev;
-	fmode_t mode = FMODE_READ | FMODE_WRITE;
+	struct file *bdev;
+	blk_mode_t mode = BLK_OPEN_READ | BLK_OPEN_WRITE;
 	int err = 0;
 
 	pr_debug("%s: start\n", __func__);
 
-	bdev = blkdev_get_by_path(bdev_path, mode, NULL, NULL);
+	bdev = bdev_file_open_by_path(bdev_path, mode, NULL, NULL);
 	if (IS_ERR(bdev)) {
 		dev_t devt = 0;
 
@@ -241,7 +227,7 @@ static int init_sdg_bdev(void)
 			goto err_blkdev;
 		}
 
-		bdev = blkdev_get_by_dev(devt, mode, NULL, NULL);
+		bdev = bdev_file_open_by_dev(devt, mode, NULL, NULL);
 		if (IS_ERR(bdev)) {
 			pr_err("'blkdev_get_by_dev' failed! (%ld)\n",
 					PTR_ERR(bdev));

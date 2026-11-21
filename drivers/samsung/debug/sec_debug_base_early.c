@@ -79,7 +79,6 @@ static void secdbg_base_set_kconstants(void)
 	kcnst->page_shift = PAGE_SHIFT;
 
 	kcnst->va_bits = VA_BITS;
-	kcnst->kimage_vaddr = kimage_vaddr;
 	kcnst->kimage_voffset = kimage_voffset;
 
 	kcnst->pgdir_shift = PGDIR_SHIFT;
@@ -266,8 +265,6 @@ static void secdbg_base_set_taskinfo(void)
 	SET_MEMBER_TYPE_INFO(&task->ts.comm, struct task_struct, comm);
 	SET_MEMBER_TYPE_INFO(&task->ts.tasks_next, struct task_struct,
 					tasks.next);
-	SET_MEMBER_TYPE_INFO(&task->ts.thread_group_next,
-					struct task_struct, thread_group.next);
 	SET_MEMBER_TYPE_INFO(&task->ts.fp, struct task_struct,
 					thread.cpu_context.fp);
 	SET_MEMBER_TYPE_INFO(&task->ts.sp, struct task_struct,
