@@ -152,7 +152,7 @@ int xhci_exynos_alloc_event_ring(struct xhci_hcd *xhci, gfp_t flags)
 		xhci_info(xhci, "ABOX audio ERST allocated at 0x%x", EXYNOS_URAM_ABOX_ERST_SEG_ADDR);
 	} else {
 		/* for AUDIO erst */
-		g_xhci_exynos_audio->ir->event_ring = xhci_ring_alloc(xhci, ERST_NUM_SEGS, 1, TYPE_EVENT, 0, flags);
+		g_xhci_exynos_audio->ir->event_ring = xhci_ring_alloc(xhci, ERST_NUM_SEGS, TYPE_EVENT, 0, flags);
 		if (!g_xhci_exynos_audio->ir->event_ring)
 			goto fail;
 		g_xhci_exynos_audio->ir->erst.entries =
@@ -255,11 +255,11 @@ struct xhci_ring *xhci_exynos_alloc_transfer_ring(struct xhci_hcd *xhci,
 
 			g_xhci_exynos_audio->exynos_uram_isoc_in_alloc = 1;
 		} else {
-			return xhci_ring_alloc(xhci, 2, 1, ring_type, max_packet, mem_flags);
+			return xhci_ring_alloc(xhci, 2, ring_type, max_packet, mem_flags);
 		}
 
 	} else {
-		return xhci_ring_alloc(xhci, 2, 1, ring_type, max_packet, mem_flags);
+		return xhci_ring_alloc(xhci, 2, ring_type, max_packet, mem_flags);
 	}
 }
 
@@ -415,7 +415,7 @@ void xhci_exynos_free_dcbaa(struct xhci_hcd *xhci)
 extern void xhci_segment_free(struct xhci_hcd *xhci, struct xhci_segment *seg);
 extern void xhci_link_segments(struct xhci_segment *prev,
 			       struct xhci_segment *next, enum xhci_ring_type type, bool chain_links);
-extern void xhci_initialize_ring_info(struct xhci_ring *ring, unsigned int cycle_state);
+extern void xhci_initialize_ring_info(struct xhci_ring *ring);
 
 static struct xhci_segment *xhci_segment_alloc_uram(struct xhci_hcd *xhci,
 						    unsigned int cycle_state, unsigned int max_packet, gfp_t flags)
@@ -619,7 +619,7 @@ struct xhci_ring *xhci_ring_alloc_uram(struct xhci_hcd *xhci,
 		/* See section 4.9.2.1 and 6.4.4.1 */
 		ring->last_seg->trbs[TRBS_PER_SEGMENT - 1].link.control |= cpu_to_le32(LINK_TOGGLE);
 	}
-	xhci_initialize_ring_info(ring, cycle_state);
+	xhci_initialize_ring_info(ring);
 	//trace_xhci_ring_alloc(ring);
 	return ring;
 

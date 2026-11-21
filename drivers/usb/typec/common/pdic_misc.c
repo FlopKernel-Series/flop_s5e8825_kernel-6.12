@@ -462,7 +462,7 @@ static const struct file_operations pdic_misc_fops = {
 	.owner		= THIS_MODULE,
 	.open		= pdic_misc_open,
 	.release	= pdic_misc_close,
-	.llseek		= no_llseek,
+	.llseek		= noop_llseek,
 	.unlocked_ioctl = pdic_misc_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = pdic_misc_compat_ioctl,

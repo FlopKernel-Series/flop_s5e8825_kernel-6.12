@@ -15,6 +15,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/usb/role.h>
 #include <linux/usb/typec.h>
+#include <linux/of_device.h>
 
 #define STUSB160X_ALERT_STATUS			0x0B /* RC */
 #define STUSB160X_ALERT_STATUS_MASK_CTRL	0x0C /* RW */

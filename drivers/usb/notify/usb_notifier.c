@@ -15,6 +15,7 @@
 #include <linux/usb_notify.h>
 #ifdef CONFIG_OF
 #include <linux/of_device.h>
+#include <linux/of_platform.h>
 #include <linux/of_gpio.h>
 #endif
 #if IS_ENABLED(CONFIG_PDIC_NOTIFIER)
@@ -37,6 +38,7 @@
 
 #include <linux/regulator/consumer.h>
 #include <linux/workqueue.h>
+#include <linux/platform_device.h>
 
 struct usb_notifier_platform_data {
 #if IS_ENABLED(CONFIG_PDIC_NOTIFIER)

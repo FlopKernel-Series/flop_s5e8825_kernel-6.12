@@ -470,10 +470,10 @@ void dwc3_otg_phy_tune(struct otg_fsm *fsm)
 	struct dwc3_otg	*dotg = container_of(otg, struct dwc3_otg, otg);
 	struct dwc3	*dwc = dotg->dwc;
 
-	exynos_usbdrd_phy_tune(dwc->usb2_generic_phy,
+	exynos_usbdrd_phy_tune(dwc->usb2_generic_phy[0],
 						dotg->otg.state);
 #ifdef CONFIG_EXYNOS_USBDRD_PHY30
-	exynos_usbdrd_phy_tune(dwc->usb3_generic_phy,
+	exynos_usbdrd_phy_tune(dwc->usb3_generic_phy[0],
 						dotg->otg.state);
 #endif
 }
