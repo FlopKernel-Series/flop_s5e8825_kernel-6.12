@@ -169,7 +169,7 @@ TRACE_EVENT(ufs_perf,
 	),
 
 	TP_fast_assign(
-		__assign_str(event, event);
+		__assign_str(event);
 		__entry->op = op;
 		__entry->doorbell = doorbell;
 		__entry->time = time;
@@ -202,7 +202,7 @@ TRACE_EVENT(ufs_perf_update_v1,
 	),
 
 	TP_fast_assign(
-		__assign_str(event, event);
+		__assign_str(event);
 		__entry->count = count;
 		__entry->hat_state = hat_state;
 		__entry->freq_state = freq_state;
@@ -231,7 +231,7 @@ TRACE_EVENT(ufs_perf_lock,
 	),
 
 	TP_fast_assign(
-		__assign_str(event, event);
+		__assign_str(event);
 		__entry->i = i;
 	),
 
@@ -254,8 +254,8 @@ DECLARE_EVENT_CLASS(ufshcd_profiling_template,
 	),
 
 	TP_fast_assign(
-		__assign_str(dev_name, dev_name);
-		__assign_str(profile_info, profile_info);
+		__assign_str(dev_name);
+		__assign_str(profile_info);
 		__entry->time_us = time_us;
 		__entry->err = err;
 	),

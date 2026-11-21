@@ -29,7 +29,7 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/pm_wakeup.h>
-#include <asm/unaligned.h>
+#include <linux/unaligned.h>
 #include <linux/regulator/consumer.h>
 #include <linux/sec_class.h>
 #include <linux/pinctrl/consumer.h>

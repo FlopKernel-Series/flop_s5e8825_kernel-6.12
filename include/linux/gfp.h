@@ -449,6 +449,25 @@ extern struct page *alloc_contig_pages_noprof(unsigned long nr_pages, gfp_t gfp_
 #endif
 void free_contig_range(unsigned long pfn, unsigned long nr_pages);
 
+#ifdef CONFIG_HPA
+int alloc_pages_highorder_except(int order, struct page **pages, int nents,
+				 phys_addr_t exception_areas[][2],
+				 int nr_exception);
+#else
+static inline int alloc_pages_highorder_except(int order,
+					       struct page **pages, int nents,
+					       phys_addr_t exception_areas[][2],
+					       int nr_exception)
+{
+	return -ENOENT;
+}
+#endif
+static inline int alloc_pages_highorder(int order, struct page **pages,
+					int nents)
+{
+	return alloc_pages_highorder_except(order, pages, nents, NULL, 0);
+}
+
 #ifdef CONFIG_CONTIG_ALLOC
 static inline struct folio *folio_alloc_gigantic_noprof(int order, gfp_t gfp,
 							int nid, nodemask_t *node)

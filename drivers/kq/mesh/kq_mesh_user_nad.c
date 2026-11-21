@@ -1,4 +1,5 @@
 #include <linux/kq/kq_mesh_user_nad.h>
+#include <linux/vmalloc.h>
 
 static struct kq_mesh_user_nad_info *g_kmn_info;
 

@@ -125,7 +125,7 @@ struct s3c64xx_spi_driver_data {
 	void __iomem                    *regs;
 	struct clk                      *src_clk;
 	struct platform_device          *pdev;
-	struct spi_master               *master;
+	struct spi_controller               *master;
 	struct s3c64xx_spi_info  *cntrlr_info;
 	struct spi_device               *tgl_spi;
 	struct list_head                queue;

@@ -19,6 +19,7 @@
 #include <linux/of_device.h>
 #ifdef CONFIG_SHUB_MODULE
 #include <linux/module.h>
+#include <linux/of.h>
 #endif
 #include "shub_device.h"
 #include "../utility/shub_utility.h"

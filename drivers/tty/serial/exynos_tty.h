@@ -1,5 +1,6 @@
-#ifndef __SAMSUNG_H
-#define __SAMSUNG_H
+// SPDX-License-Identifier: GPL-2.0
+#ifndef __EXYNOS_TTY_H
+#define __EXYNOS_TTY_H
 
 /*
  * Driver for Samsung SoC onboard UARTs.
@@ -13,15 +14,38 @@
 */
 
 #include <linux/pm_qos.h>
+#include <linux/serial_s3c.h>
 #include <linux/serial_s3c_ext.h>
+#include <linux/pinctrl/consumer.h>
 
 #define USI_CON                  (0xC4)
 #define USI_OPTION       (0xC8)
 
-#define USI_RESET                (0<<0)
-#define USI_SET_RESET            (1<<0)
-#define USI_HWACG_CLKREQ_ON      (1<<1)
-#define USI_HWACG_CLKSTOP_ON     (1<<2)
+#define USI_CON_RESET          (1<<0)
+#define USI_CON_RESET_MASK     (1<<0)
+
+#define USI_OPTION_HWACG_CLKREQ_ON     (1<<1)
+#define USI_OPTION_HWACG_CLKSTOP_ON    (1<<2)
+#define USI_OPTION_HWACG_MASK          (3<<1)
+
+#define S3C2410_UINTP	(0x30)
+#define S3C2410_UINTS	(0x34)
+#define S3C2410_UINTM	(0x38)
+#define UART_OPTION     (0x80)
+
+#define UART_OPTION_HS_MODE    (1<<1)
+
+#define S5PV210_UFCON_RXTRIG_SHIFT	(4)
+
+#define S5PV210_UMCON_RTSTRIG255	(0<<5)
+#define S5PV210_UMCON_RTSTRIG224	(1<<5)
+#define S5PV210_UMCON_RTSTRIG192	(2<<5)
+#define S5PV210_UMCON_RTSTRIG160	(3<<5)
+#define S5PV210_UMCON_RTSTRIG128	(4<<5)
+#define S5PV210_UMCON_RTSTRIG96		(5<<5)
+#define S5PV210_UMCON_RTSTRIG64		(6<<5)
+#define S5PV210_UMCON_RTSTRIG32		(7<<5)
+#define S5PV210_UMCON_RTSTRIG_SHIFT	(5)
 
 #define EXYNOS_UART_PORT_RESUME		0x0
 #define EXYNOS_UART_PORT_SUSPEND		0x3
@@ -30,18 +54,7 @@
 #define EXYNOS_SERIAL_CTRL_NUM			0x4
 #define EXYNOS_SERIAL_BUAD_NUM			0x2
 
-#define S5PV210_UFCON_RXTRIG_SHIFT	(4)
-
-#define S5PV210_UMCON_RTSTRIG255        (0<<5)
-#define S5PV210_UMCON_RTSTRIG224        (1<<5)
-#define S5PV210_UMCON_RTSTRIG192        (2<<5)
-#define S5PV210_UMCON_RTSTRIG160        (3<<5)
-#define S5PV210_UMCON_RTSTRIG128        (4<<5)
-#define S5PV210_UMCON_RTSTRIG96         (5<<5)
-#define S5PV210_UMCON_RTSTRIG64         (6<<5)
-#define S5PV210_UMCON_RTSTRIG32         (7<<5)
-#define S5PV210_UMCON_RTSTRIG_SHIFT     (5)
-
+struct uart_port;
 unsigned int uart_xmit_size;
 
 struct exynos_uart_info {
@@ -197,4 +210,6 @@ struct exynos_uart_port {
 #define wr_regb(port, reg, val) writeb_relaxed(val, portaddr(port, reg))
 #define wr_regl(port, reg, val) writel_relaxed(val, portaddr(port, reg))
 
+/* exported function prototype */
+int exynos_serial_has_interrupt_mask(struct uart_port *port);
 #endif

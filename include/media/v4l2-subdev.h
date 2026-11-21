@@ -916,6 +916,9 @@ struct v4l2_subdev_pad_ops {
  * @sensor: pointer to &struct v4l2_subdev_sensor_ops. Can be %NULL
  * @pad: pointer to &struct v4l2_subdev_pad_ops. Can be %NULL
  */
+/* Size of the subdev name, kept for the vendor camera drivers. */
+#define V4L2_SUBDEV_NAME_SIZE	32
+
 struct v4l2_subdev_ops {
 	const struct v4l2_subdev_core_ops	*core;
 	const struct v4l2_subdev_tuner_ops	*tuner;

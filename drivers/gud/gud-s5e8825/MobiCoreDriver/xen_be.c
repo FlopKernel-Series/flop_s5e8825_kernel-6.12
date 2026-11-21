@@ -623,7 +623,7 @@ static int xen_be_early_init(int (*probe)(void), int (*start)(void))
 	if (IS_ERR(be_vm_id))
 		return PTR_ERR(be_vm_id);
 
-	strlcpy(l_ctx.vm_id, be_vm_id, sizeof(l_ctx.vm_id));
+	strscpy(l_ctx.vm_id, be_vm_id, sizeof(l_ctx.vm_id));
 	kfree(be_vm_id);
 	return 0;
 };

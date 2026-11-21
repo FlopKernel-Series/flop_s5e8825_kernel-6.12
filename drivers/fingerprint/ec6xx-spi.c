@@ -885,7 +885,7 @@ static const struct file_operations ec6xx_fops = {
 	.compat_ioctl = ec6xx_compat_ioctl,
 	.open = ec6xx_open,
 	.release = ec6xx_release,
-	.llseek = no_llseek,
+	.llseek = noop_llseek,
 	.poll = ec6xx_fps_interrupt_poll
 };
 
@@ -1347,7 +1347,6 @@ static int ec6xx_remove(struct spi_device *spi)
 static void ec6xx_remove(struct platform_device* pdev)
 {
 	ec6xx_remove_common(&pdev->dev);
-	return;
 }
 #else
 static int ec6xx_remove(struct platform_device *pdev)

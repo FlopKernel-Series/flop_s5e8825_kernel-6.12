@@ -1277,11 +1277,11 @@ static int exynos5_i2c_probe(struct platform_device *pdev)
 	i2c->idle_ip_index = exynos_get_idle_ip_index(dev_name(&pdev->dev), 1);
 #endif
 
-	strlcpy(i2c->adap.name, "exynos5-i2c", sizeof(i2c->adap.name));
+	strscpy(i2c->adap.name, "exynos5-i2c", sizeof(i2c->adap.name));
 	i2c->adap.owner   = THIS_MODULE;
 	i2c->adap.algo    = &exynos5_i2c_algorithm;
 	i2c->adap.retries = 2;
-	i2c->adap.class   = I2C_CLASS_HWMON | I2C_CLASS_SPD;
+	i2c->adap.class   = I2C_CLASS_HWMON;
 
 	i2c->dev = &pdev->dev;
 	i2c->clk = devm_clk_get(&pdev->dev, "gate_hsi2c_clk");

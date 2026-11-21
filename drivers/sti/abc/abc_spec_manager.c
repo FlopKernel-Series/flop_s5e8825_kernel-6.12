@@ -72,7 +72,7 @@ int sec_abc_get_normal_token_value(char *dst, char *src, char *token)
 		return -EINVAL;
 	}
 
-	strlcpy(dst, src + token_len, ABC_EVENT_STR_MAX);
+	strscpy(dst, src + token_len, ABC_EVENT_STR_MAX);
 	return 0;
 }
 EXPORT_SYMBOL_KUNIT(sec_abc_get_normal_token_value);
@@ -107,7 +107,7 @@ int sec_abc_get_event_type(char *dst, char *src)
 		return -EINVAL;
 	}
 
-	strlcpy(dst, src, 5);
+	strscpy(dst, src, 5);
 	return 0;
 }
 EXPORT_SYMBOL_KUNIT(sec_abc_get_event_type);
@@ -154,7 +154,7 @@ int sec_abc_make_key_data(struct abc_key_data *key_data, char *str)
 
 	ABC_DEBUG("start : %s", str);
 
-	strlcpy(temp, str, ABC_BUFFER_MAX);
+	strscpy(temp, str, ABC_BUFFER_MAX);
 	p = temp;
 
 	while ((c = strsep(&p, "@")) != NULL && idx < ABC_UEVENT_MAX) {
@@ -268,7 +268,7 @@ int sec_abc_parse_spec_cmd(char *str, struct abc_spec_cmd *abc_spec)
 	char *c, *p;
 	char *sys_input_strings[3] = { 0, };
 
-	strlcpy(temp, str, ABC_BUFFER_MAX);
+	strscpy(temp, str, ABC_BUFFER_MAX);
 	p = temp;
 
 	while ((c = strsep(&p, "@")) != NULL && idx < ABC_SPEC_CMD_STR_MAX) {
@@ -285,7 +285,7 @@ int sec_abc_parse_spec_cmd(char *str, struct abc_spec_cmd *abc_spec)
 	if (sec_abc_get_event_name(abc_spec->name, sys_input_strings[1]))
 		return -EINVAL;
 
-	strlcpy(abc_spec->spec, sys_input_strings[2], ABC_EVENT_STR_MAX);
+	strscpy(abc_spec->spec, sys_input_strings[2], ABC_EVENT_STR_MAX);
 
 	return 0;
 }
@@ -399,7 +399,7 @@ void sec_abc_change_spec(const char *str)
 		return;
 	}
 
-	strlcpy(temp, str, ABC_BUFFER_MAX * 5);
+	strscpy(temp, str, ABC_BUFFER_MAX * 5);
 	p = temp;
 
 	while ((cmd_string = strsep(&p, ",\n")) != NULL && cnt < REGISTERED_ABC_EVENT_TOTAL) {

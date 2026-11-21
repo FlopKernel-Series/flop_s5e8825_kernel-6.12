@@ -476,7 +476,7 @@ static void vlx_fe_start(void *cookie)
 
 	/* Set the cmd for the BE with the FE's name*/
 	vlx_fe->pfe.fe2be_data->cmd = TEE_CONNECT;
-	strlcpy(vlx_fe->pfe.fe2be_data->server_name,
+	strscpy(vlx_fe->pfe.fe2be_data->server_name,
 		vlx_fe->vm_info->callback_channel_name,
 		sizeof(vlx_fe->pfe.fe2be_data->server_name));
 	vlx_fe->pfe.fe2be_data->server_name[

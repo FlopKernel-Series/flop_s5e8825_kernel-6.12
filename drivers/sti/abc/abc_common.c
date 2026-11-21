@@ -284,10 +284,10 @@ void abc_common_test_get_work_str(char *utest_event_str[])
 	for (i = 0; i < ABC_TEST_UEVENT_MAX; i++) {
 		if (utest_event_str[i]) {
 			if (i >= 2 && !strncmp(utest_event_str[i], TIME_KEYWORD, strlen(TIME_KEYWORD)))
-				strlcpy(abc_common_kunit_test_work_str[i],
+				strscpy(abc_common_kunit_test_work_str[i],
 						TIME_KEYWORD, ABC_TEST_STR_MAX);
 			else
-				strlcpy(abc_common_kunit_test_work_str[i],
+				strscpy(abc_common_kunit_test_work_str[i],
 						utest_event_str[i], ABC_TEST_STR_MAX);
 		}
 	}
@@ -296,7 +296,7 @@ EXPORT_SYMBOL_KUNIT(abc_common_test_get_work_str);
 
 void abc_common_test_get_log_str(char *log_str)
 {
-	strlcpy(sec_abc_kunit_test_log_str, log_str, sizeof(sec_abc_kunit_test_log_str));
+	strscpy(sec_abc_kunit_test_log_str, log_str, sizeof(sec_abc_kunit_test_log_str));
 }
 EXPORT_SYMBOL_KUNIT(abc_common_test_get_log_str);
 #endif
@@ -617,7 +617,7 @@ ssize_t enabled_store(struct device *dev,
 		abc_enable_mode &= (~ERROR_REPORT_MODE_BIT);
 	} else {
 
-		strlcpy(temp, buf, ABC_CMD_STR_MAX * 3);
+		strscpy(temp, buf, ABC_CMD_STR_MAX * 3);
 		p = temp;
 		items = ARRAY_SIZE(enable_cmd_list);
 
@@ -877,7 +877,7 @@ void sec_abc_enqueue_work(struct abc_event_work work_data[], char *str)
 	for (idx = 0; idx < ABC_WORK_MAX; idx++) {
 		if (!work_pending(&work_data[idx].work)) {
 			ABC_DEBUG("Event %s use work[%d]", str, idx);
-			strlcpy(work_data[idx].abc_str, str, ABC_BUFFER_MAX);
+			strscpy(work_data[idx].abc_str, str, ABC_BUFFER_MAX);
 			queue_work(pinfo->workqueue, &work_data[idx].work);
 			return;
 		}

@@ -25,6 +25,7 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/vmalloc.h>
 
 #define SENSORHUB_DUMP_NOTI_EVENT 0xFC
 
