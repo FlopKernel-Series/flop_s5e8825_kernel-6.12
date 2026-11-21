@@ -955,7 +955,7 @@ static int st21nfc_ping(struct st21nfc_device *st21nfc_dev)
 
 static const struct file_operations st21nfc_dev_fops = {
 	.owner = THIS_MODULE,
-	.llseek = no_llseek,
+	.llseek = noop_llseek,
 	.read = st21nfc_dev_read,
 	.write = st21nfc_dev_write,
 	.open = st21nfc_dev_open,
