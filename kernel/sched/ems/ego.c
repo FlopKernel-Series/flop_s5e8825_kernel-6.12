@@ -1094,6 +1094,9 @@ int ego_set_margin_util_target(int cpu, unsigned int target_util)
 	struct ego_cpu *egc = &per_cpu(ego_cpu, cpu);
 	struct ego_policy *egp = egc->egp;
 
+	if (unlikely(!egp))
+		return -EINVAL;
+
 	egp->margin_util_target_by_user = target_util;
 
 	return 0;

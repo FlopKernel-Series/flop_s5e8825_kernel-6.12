@@ -657,6 +657,9 @@ void pago_update(void)
 {
 	ktime_t now = ktime_get();
 
+	if (unlikely(!pago))
+		return;
+
 	if (unlikely(!pago->enable))
 		return;
 
@@ -673,7 +676,13 @@ void pago_tick(struct rq *rq)
 	struct pago_cpu *data = &per_cpu(pago_cpu, rq->cpu);
 	int i;
 	unsigned long flags;
-	ktime_t now = ktime_get(), update_period = pago->update_period;
+	ktime_t now, update_period;
+
+	if (unlikely(!pago))
+		return;
+
+	now = ktime_get();
+	update_period = pago->update_period;
 
 	raw_spin_lock_irqsave(&data->lock, flags);
 
