@@ -500,9 +500,8 @@ static int samsung_sysmmu_attach_dev(struct iommu_domain *dom,
 	phys_addr_t page_table;
 	int i, ret = -EINVAL;
 
-	if (!fwspec || fwspec->ops != &samsung_sysmmu_ops) {
-		dev_err(dev, "failed to attach, IOMMU instance data %s.\n",
-			!fwspec ? "is not initialized" : "has different ops");
+	if (!fwspec) {
+		dev_err(dev, "failed to attach, IOMMU instance data is not initialized.\n");
 		return -ENXIO;
 	}
 
@@ -677,8 +676,8 @@ static int lv2set_page(sysmmu_pte_t *pent, phys_addr_t paddr,
 }
 
 static int samsung_sysmmu_map(struct iommu_domain *dom, unsigned long l_iova,
-			      phys_addr_t paddr, size_t size, int prot,
-			      gfp_t unused)
+			      phys_addr_t paddr, size_t size, size_t count,
+			      int prot, gfp_t unused, size_t *mapped)
 {
 	struct samsung_sysmmu_domain *domain = to_sysmmu_domain(dom);
 	sysmmu_iova_t iova = (sysmmu_iova_t)l_iova;
@@ -714,14 +713,17 @@ static int samsung_sysmmu_map(struct iommu_domain *dom, unsigned long l_iova,
 
 	if (ret)
 		pr_err("failed to map %#zx @ %#x, ret:%d\n", size, iova, ret);
-	else
+	else {
+		*mapped = size;
 		SYSMMU_EVENT_LOG_RANGE(domain, SYSMMU_EVENT_MAP, iova, iova + size);
+	}
 
 	return ret;
 }
 
 static size_t samsung_sysmmu_unmap(struct iommu_domain *dom,
 				   unsigned long l_iova, size_t size,
+				   size_t count,
 				   struct iommu_iotlb_gather *gather)
 {
 	struct samsung_sysmmu_domain *domain = to_sysmmu_domain(dom);
@@ -901,11 +903,6 @@ static struct iommu_device *samsung_sysmmu_probe_device(struct device *dev)
 		return ERR_PTR(-ENODEV);
 	}
 
-	if (fwspec->ops != &samsung_sysmmu_ops) {
-		dev_err(dev, "has different IOMMU ops\n");
-		return ERR_PTR(-ENODEV);
-	}
-
 	client = (struct sysmmu_clientdata *) dev_iommu_priv_get(dev);
 	if (client->dev_link) {
 		dev_info(dev, "is already added. It's okay.\n");
@@ -940,7 +937,7 @@ static void samsung_sysmmu_release_device(struct device *dev)
 	struct sysmmu_clientdata *client;
 	int i;
 
-	if (!fwspec || fwspec->ops != &samsung_sysmmu_ops)
+	if (!fwspec)
 		return;
 
 	client = (struct sysmmu_clientdata *) dev_iommu_priv_get(dev);
@@ -1022,7 +1019,7 @@ static void samsung_sysmmu_clientdata_release(struct device *dev, void *res)
 }
 
 static int samsung_sysmmu_of_xlate(struct device *dev,
-				   struct of_phandle_args *args)
+				   const struct of_phandle_args *args)
 {
 	struct platform_device *sysmmu;
 	struct sysmmu_drvdata *data;
@@ -1207,8 +1204,8 @@ static int samsung_sysmmu_def_domain_type(struct device *dev)
 
 static struct iommu_domain_ops	samsung_sysmmu_domain_ops = {
 	.attach_dev		= samsung_sysmmu_attach_dev,
-	.map			= samsung_sysmmu_map,
-	.unmap			= samsung_sysmmu_unmap,
+	.map_pages		= samsung_sysmmu_map,
+	.unmap_pages		= samsung_sysmmu_unmap,
 	.flush_iotlb_all	= samsung_sysmmu_flush_iotlb_all,
 	.iotlb_sync		= samsung_sysmmu_iotlb_sync,
 	.iova_to_phys		= samsung_sysmmu_iova_to_phys,

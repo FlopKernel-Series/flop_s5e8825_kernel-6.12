@@ -80,18 +80,9 @@ static char *sysmmu_fault_name[SYSMMU_FAULTS_NUM] = {
 	"UNKNOWN FAULT"
 };
 
-static int sysmmu_fault_type[SYSMMU_FAULTS_NUM] = {
-	IOMMU_FAULT_REASON_WALK_EABT,
-	IOMMU_FAULT_REASON_PTE_FETCH,
-	IOMMU_FAULT_REASON_UNKNOWN,
-	IOMMU_FAULT_REASON_ACCESS,
-	IOMMU_FAULT_REASON_PERMISSION,
-	IOMMU_FAULT_REASON_UNKNOWN,
-};
-
 struct samsung_sysmmu_fault_info {
 	struct sysmmu_drvdata *drvdata;
-	struct iommu_fault_event event;
+	struct iopf_fault event;
 };
 
 static inline u32 __sysmmu_get_intr_status(struct sysmmu_drvdata *data,
@@ -503,22 +494,16 @@ irqreturn_t samsung_sysmmu_irq_thread(int irq, void *dev_id)
 	struct sysmmu_drvdata *drvdata = dev_id;
 	bool is_secure = (irq == drvdata->secure_irq);
 	struct iommu_group *group = drvdata->group;
-	enum iommu_fault_reason reason;
 	struct samsung_sysmmu_fault_info fi = {
 		.drvdata = drvdata,
-		.event.fault.type = IOMMU_FAULT_DMA_UNRECOV,
+		.event.fault.type = IOMMU_FAULT_PAGE_REQ,
 	};
 	const char *port_name = NULL;
 	u32 info;
 
 	sysmmu_get_interrupt_info(drvdata, &itype, &addr, &vmid, is_secure);
-	reason = sysmmu_fault_type[itype];
 
-	fi.event.fault.event.addr = addr;
-	fi.event.fault.event.reason = reason;
-	if (reason == IOMMU_FAULT_REASON_PTE_FETCH ||
-	    reason == IOMMU_FAULT_REASON_PERMISSION)
-		fi.event.fault.type = IOMMU_FAULT_PAGE_REQ;
+	fi.event.fault.prm.addr = addr;
 
 	ret = iommu_group_for_each_dev(group, &fi,
 				       samsung_sysmmu_fault_notifier);
