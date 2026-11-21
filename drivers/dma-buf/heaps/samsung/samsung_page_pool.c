@@ -437,16 +437,21 @@ static unsigned long secure_page_pools_shrink_scan(struct shrinker *shrinker,
 	return (nr_total) ? nr_total : SHRINK_STOP;
 }
 
-struct shrinker secure_pool_shrinker = {
-	.count_objects = secure_page_pools_shrink_count,
-	.scan_objects = secure_page_pools_shrink_scan,
-	.seeks = DEFAULT_SEEKS,
-	.batch = 0,
-};
+static struct shrinker *secure_pool_shrinker;
 
 static int secure_page_pool_init_shrinker(void)
 {
-	return register_shrinker(&secure_pool_shrinker, "secure-page-pool-shrinker");
+	secure_pool_shrinker = shrinker_alloc(0, "secure-page-pool-shrinker");
+	if (!secure_pool_shrinker)
+		return -ENOMEM;
+
+	secure_pool_shrinker->count_objects = secure_page_pools_shrink_count;
+	secure_pool_shrinker->scan_objects = secure_page_pools_shrink_scan;
+	secure_pool_shrinker->seeks = DEFAULT_SEEKS;
+	secure_pool_shrinker->batch = 0;
+	shrinker_register(secure_pool_shrinker);
+
+	return 0;
 }
 
 #define HIGH_ORDER_GFP  (((GFP_HIGHUSER | __GFP_ZERO | __GFP_NOWARN \

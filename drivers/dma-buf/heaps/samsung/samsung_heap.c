@@ -87,7 +87,7 @@ void __dma_heap_event_record(enum dma_heap_event_type type, const char *name,
 
 	event->begin = begin;
 	event->done = ktime_get();
-	strlcpy(event->heapname, name, sizeof(event->heapname));
+	strscpy(event->heapname, name, sizeof(event->heapname));
 	event->size = size;
 	event->type = type;
 }
@@ -423,7 +423,7 @@ static int samsung_heap_read_dt(struct samsung_dma_heap *heap, struct device *de
 	}
 
 	of_property_read_u32(dev->of_node, "dma-heap,alignment", &alignment);
-	order = min_t(unsigned int, get_order(alignment), MAX_ORDER);
+	order = min_t(unsigned int, get_order(alignment), MAX_PAGE_ORDER);
 
 	heap->flags = flags;
 	heap->protection_id = protid;

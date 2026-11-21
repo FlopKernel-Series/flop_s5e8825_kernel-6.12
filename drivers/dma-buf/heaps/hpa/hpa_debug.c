@@ -43,7 +43,7 @@ void hpa_event_record(enum hpa_event_type type, struct dma_buf *dmabuf,
 
 	event->begin = begin;
 	event->done = ktime_get();
-	strlcpy(event->heapname, dmabuf->exp_name, sizeof(event->heapname));
+	strscpy(event->heapname, dmabuf->exp_name, sizeof(event->heapname));
 	event->ino = ino;
 	event->size = dmabuf->size;
 	event->type = type;

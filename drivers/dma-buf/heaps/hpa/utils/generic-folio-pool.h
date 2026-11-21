@@ -119,15 +119,15 @@ struct order_bucket {
  *
  * A pool of pre-allocated folios for efficient memory allocation.
  * Supports multiple orders and shrinker-based reclamation under memory pressure.
- * Buckets are indexed directly by order value (0 to MAX_ORDER-1).
+ * Buckets are indexed directly by order value (0 to MAX_PAGE_ORDER-1).
  */
 struct gen_folio_pool {
 	const char *name;
 	const struct heap_pool_ops *pool_ops;
-	struct shrinker shrinker;
+	struct shrinker *shrinker;
 
 	unsigned long orders_bitmap;
-	struct order_bucket buckets[MAX_ORDER];
+	struct order_bucket buckets[MAX_PAGE_ORDER];
 
 	void *priv;
 };

@@ -24,6 +24,7 @@
 #include <linux/samsung/samsung-dma-mapping.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 #include <uapi/linux/dma-buf.h>
 
 #include "secure_buffer.h"

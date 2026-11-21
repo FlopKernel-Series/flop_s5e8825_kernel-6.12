@@ -46,7 +46,7 @@ static struct folio *get_folio_smallest_order(struct gen_folio_pool *pool,
 	struct folio *folio;
 	unsigned int i;
 
-	for (i = 0; i < MAX_ORDER; i++) {
+	for (i = 0; i < MAX_PAGE_ORDER; i++) {
 		if (!(pool->orders_bitmap & BIT(i)))
 			continue;
 
@@ -70,12 +70,12 @@ static struct folio *get_folio_smallest_order(struct gen_folio_pool *pool,
 static unsigned long pool_shrink_count(struct shrinker *shrinker,
 				       struct shrink_control *sc)
 {
-	struct gen_folio_pool *gen_pool = container_of(shrinker, struct gen_folio_pool, shrinker);
+	struct gen_folio_pool *gen_pool = shrinker->private_data;
 	unsigned long total_pages = 0;
 	unsigned int i;
 
 	/* Sum up pages across all buckets */
-	for (i = 0; i < MAX_ORDER; i++) {
+	for (i = 0; i < MAX_PAGE_ORDER; i++) {
 		if (gen_pool->orders_bitmap & BIT(i)) {
 			total_pages += max(0, atomic_long_read(&gen_pool->buckets[i].size)) >>
 				       PAGE_SHIFT;
@@ -91,7 +91,7 @@ static unsigned long pool_shrink_count(struct shrinker *shrinker,
 static unsigned long pool_shrink_scan(struct shrinker *shrinker,
 				      struct shrink_control *sc)
 {
-	struct gen_folio_pool *gen_pool = container_of(shrinker, struct gen_folio_pool, shrinker);
+	struct gen_folio_pool *gen_pool = shrinker->private_data;
 	unsigned long nr_freed = 0;
 	LIST_HEAD(candidate_list);
 	LIST_HEAD(failed_list);
@@ -166,7 +166,7 @@ struct folio *gen_folio_pool_get_order(struct gen_folio_pool *gen_pool,
 	struct order_bucket *bucket;
 	struct folio *folio = NULL;
 
-	if (order >= MAX_ORDER || !(gen_pool->orders_bitmap & BIT(order)))
+	if (order >= MAX_PAGE_ORDER || !(gen_pool->orders_bitmap & BIT(order)))
 		return NULL;
 
 	bucket = &gen_pool->buckets[order];
@@ -231,7 +231,7 @@ void gen_folio_pool_put(struct gen_folio_pool *gen_pool, struct folio *folio)
 	order = folio_order(folio);
 
 	/* Check if order is valid and supported */
-	if (order >= MAX_ORDER || !(gen_pool->orders_bitmap & BIT(order))) {
+	if (order >= MAX_PAGE_ORDER || !(gen_pool->orders_bitmap & BIT(order))) {
 		LIST_HEAD(folio_list);
 
 		pr_warn("%s: unexpected order %u folio, evicting immediately\n",
@@ -268,7 +268,7 @@ unsigned long gen_folio_pool_size(struct gen_folio_pool *gen_pool)
 	unsigned long total_size = 0;
 	unsigned int i;
 
-	for (i = 0; i < MAX_ORDER; i++) {
+	for (i = 0; i < MAX_PAGE_ORDER; i++) {
 		if (gen_pool->orders_bitmap & BIT(i))
 			total_size += max(0, atomic_long_read(&gen_pool->buckets[i].size));
 	}
@@ -303,19 +303,23 @@ int gen_folio_pool_init_ext(struct gen_folio_pool *gen_pool,
 		return -EINVAL;
 
 	/* Validate orders_bitmap and count orders */
-	if ((orders_bitmap == 0) || ((orders_bitmap >> MAX_ORDER) != 0))
+	if ((orders_bitmap == 0) || ((orders_bitmap >> MAX_PAGE_ORDER) != 0))
 		return -EINVAL;
 
 	memset(gen_pool, 0, sizeof(*gen_pool));
 
 	/* Register shrinker */
-	gen_pool->shrinker.count_objects = pool_shrink_count;
-	gen_pool->shrinker.scan_objects = pool_shrink_scan;
-	gen_pool->shrinker.seeks = seeks;
-	gen_pool->shrinker.batch = batch;
+	gen_pool->shrinker = shrinker_alloc(0, "gen-pool:%s", name);
+	if (!gen_pool->shrinker)
+		return -ENOMEM;
 
-	if (register_shrinker(&gen_pool->shrinker, "gen-pool:%s", name) < 0)
-		return -ENODEV;
+	gen_pool->shrinker->count_objects = pool_shrink_count;
+	gen_pool->shrinker->scan_objects = pool_shrink_scan;
+	gen_pool->shrinker->seeks = seeks;
+	gen_pool->shrinker->batch = batch;
+	gen_pool->shrinker->private_data = gen_pool;
+
+	shrinker_register(gen_pool->shrinker);
 
 	/* Initialize pool fields */
 	gen_pool->orders_bitmap = orders_bitmap;
@@ -323,7 +327,7 @@ int gen_folio_pool_init_ext(struct gen_folio_pool *gen_pool,
 	gen_pool->pool_ops = pool_ops;
 
 	/* Initialize all bucket spinlocks and lists */
-	for (i = 0; i < MAX_ORDER; i++) {
+	for (i = 0; i < MAX_PAGE_ORDER; i++) {
 		spin_lock_init(&gen_pool->buckets[i].lock);
 		INIT_LIST_HEAD(&gen_pool->buckets[i].folio_list);
 		atomic_long_set(&gen_pool->buckets[i].count, 0);

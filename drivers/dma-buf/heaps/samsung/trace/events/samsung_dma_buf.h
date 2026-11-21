@@ -28,10 +28,6 @@
 
 #include <linux/version.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
-#define __assign_str(src, dst) __assign_str(dst)
-#endif
-
 TRACE_EVENT(samsung_dma_buf_op,
 
 	TP_PROTO(char type, const char *slice, const char *track,
@@ -54,14 +50,14 @@ TRACE_EVENT(samsung_dma_buf_op,
 
 	TP_fast_assign(
 		__entry->track_event_type = type;
-		__assign_str(slice_name, slice);
-		__assign_str(track_name, track);
+		__assign_str(slice_name);
+		__assign_str(track_name);
 		__entry->begin_elapsed = begin_elapsed;
 		__entry->ino = ino;
 		__entry->size = size;
 		__entry->err = err;
 		__entry->direction = direction;
-		__assign_str(device, device);
+		__assign_str(device);
 	),
 
 	TP_printk("type=%c slice=%s track=%s ino=%lu size=%zu err=%d dir=%d dev=%s %s=%lldus",
@@ -91,7 +87,7 @@ TRACE_EVENT(samsung_dma_buf_lifecycle,
 
 	TP_fast_assign(
 		__entry->counter_value = value;
-		__assign_str(track_name, track);
+		__assign_str(track_name);
 		__entry->scope_id = 0;
 	),
 

@@ -29,10 +29,6 @@
 
 #include <linux/version.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
-#define __assign_str(src, dst) __assign_str(dst)
-#endif
-
 TRACE_EVENT(samsung_dma_heap_op,
 
 	TP_PROTO(char type, const char *slice, const char *track,
@@ -55,14 +51,14 @@ TRACE_EVENT(samsung_dma_heap_op,
 
 	TP_fast_assign(
 		__entry->track_event_type = type;
-		__assign_str(slice_name, slice);
-		__assign_str(track_name, track);
+		__assign_str(slice_name);
+		__assign_str(track_name);
 		__entry->begin_elapsed = begin_elapsed;
 		__entry->size = size;
 		__entry->ino = ino;
 		__entry->err = err;
 		__entry->flags = flags;
-		__assign_str(note, note);
+		__assign_str(note);
 	),
 
 	TP_printk("type=%c slice=%s track=%s size=%zu ino=%lu err=%d flags=%#x note=%s %s=%lldus",
@@ -95,8 +91,8 @@ TRACE_EVENT(samsung_dma_heap_shrinker,
 
 	TP_fast_assign(
 		__entry->track_event_type = type;
-		__assign_str(slice_name, slice);
-		__assign_str(track_name, track);
+		__assign_str(slice_name);
+		__assign_str(track_name);
 		__entry->nr_to_scan = nr_to_scan;
 		__entry->freed = freed;
 	),
@@ -123,7 +119,7 @@ TRACE_EVENT(samsung_dma_heap_stat,
 
 	TP_fast_assign(
 		__entry->counter_value = value;
-		__assign_str(track_name, track);
+		__assign_str(track_name);
 		__entry->scope_id = 0;
 	),
 
@@ -145,7 +141,7 @@ TRACE_EVENT(samsung_dma_heap_fallback,
 
 	TP_fast_assign(
 		__entry->counter_value = count;
-		__assign_str(track_name, track);
+		__assign_str(track_name);
 	),
 
 	TP_printk("count=%lld track=%s",
