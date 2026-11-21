@@ -20,6 +20,14 @@
 	#define CPU_CL1	"6-7"
 	#define CPU_ALL	"0-7"
 
+	exynos-cpu-phyid {
+		compatible = "samsung,exynos-cpu-phyid";
+		status = "okay";
+
+		/* Define the physical cluster ID of each CPU */
+		cpus-map = "0-5", "6-7";
+	};
+
 	power-data {
 		#define CPUCL0_DMIPS_PER_MHZ 260
 		#define CPUCL1_DMIPS_PER_MHZ 880
@@ -43,6 +51,7 @@
 				ect-param-vt = "DTM_LIT_VOLT_TEMP";
 				ect-param-a = "DTM_LIT_ASV";
 				tz-name = "LITTLE";
+				ect-coeff-idx = <2>;
 
 				/* dhrystone to clang conversion ratio */
 				dhry-to-clang-dp-ratio = <820>;
@@ -60,6 +69,7 @@
 				ect-param-vt = "DTM_BIG_VOLT_TEMP";
 				ect-param-a = "DTM_BIG_ASV";
 				tz-name = "BIG";
+				ect-coeff-idx = <0>;
 
 				/* dhrystone to clang conversion ratio */
 				dhry-to-clang-dp-ratio = <850>;
