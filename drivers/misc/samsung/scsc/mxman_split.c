@@ -2657,7 +2657,7 @@ void mxman_fail(struct mxman *mxman, u16 failure_source, const char *reason, enu
 			return;
 		};
 
-		strlcpy(mxman->failure_reason, reason, sizeof(mxman->failure_reason));
+		strscpy(mxman->failure_reason, reason, sizeof(mxman->failure_reason));
 		/* If recovery is disabled, don't let it be
 		 * re-enabled from now on. Device must reboot
 		 */
@@ -2726,7 +2726,7 @@ void mxman_fail_level8(struct mxman *mxman, u16 failure_source, const char *reas
 		};
 
 		mxman->scsc_panic_code = failure_source;
-		strlcpy(mxman->failure_reason, reason, sizeof(mxman->failure_reason));
+		strscpy(mxman->failure_reason, reason, sizeof(mxman->failure_reason));
 		/* If recovery is disabled, don't let it be
 		 * re-enabled from now on. Device must reboot
 		 */

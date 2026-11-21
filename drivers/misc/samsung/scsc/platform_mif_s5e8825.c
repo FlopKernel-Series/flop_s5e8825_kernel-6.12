@@ -66,6 +66,7 @@
 #ifdef CONFIG_SCSC_WLBT_CFG_REQ_WQ
 #include <linux/workqueue.h>
 #endif
+#include <linux/vmalloc.h>
 
 #if IS_ENABLED(CONFIG_SCSC_MEMLOG)
 #include <soc/samsung/exynos/memlogger.h>

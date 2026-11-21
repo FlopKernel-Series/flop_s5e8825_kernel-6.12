@@ -1840,7 +1840,7 @@ void slsi_rx_channel_switched_ind(struct slsi_dev *sdev, struct net_device *dev,
 	ndev_vif->ap.channel_freq = freq; /* updated for GETSTAINFO */
 	ndev_vif->chan = chandef.chan;
 	ndev_vif->chandef_saved = chandef;
-	cfg80211_ch_switch_notify(dev, &chandef, 0, 0);
+	cfg80211_ch_switch_notify(dev, &chandef, 0);
 
 exit:
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);

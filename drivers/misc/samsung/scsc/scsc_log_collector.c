@@ -105,7 +105,7 @@ static int sable_collection_off_set_param_cb(const char *val,
 {
 	bool nval;
 
-	if (!val || strtobool(val, &nval))
+	if (!val || kstrtobool(val, &nval))
 		return -EINVAL;
 
 	if (sable_collection_off ^ nval) {

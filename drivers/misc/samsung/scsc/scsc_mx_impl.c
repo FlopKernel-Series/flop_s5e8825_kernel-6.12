@@ -47,6 +47,7 @@
 #else
 #include <linux/wakelock.h>
 #endif
+#include <linux/vmalloc.h>
 
 static int scsc_mx_alloc_retry_cnt = 3;
 module_param(scsc_mx_alloc_retry_cnt, int, S_IRUGO | S_IWUSR);

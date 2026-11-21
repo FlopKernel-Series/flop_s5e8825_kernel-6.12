@@ -3006,7 +3006,7 @@ int slsi_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	r = slsi_mlme_start(sdev, dev, dev->dev_addr, settings, wpa_ie_pos, wmm_ie_pos, append_vht_ies);
 
-	cfg80211_ch_switch_notify(dev, &settings->chandef, 0, 0);
+	cfg80211_ch_switch_notify(dev, &settings->chandef, 0);
 
 #ifdef CONFIG_SCSC_WLAN_WIFI_SHARING
 	if (r == 0)
@@ -3053,7 +3053,7 @@ exit_with_start_stop_mutex:
 }
 
 int slsi_change_beacon(struct wiphy *wiphy, struct net_device *dev,
-		       struct cfg80211_beacon_data *info)
+		       struct cfg80211_ap_update *info)
 {
 	SLSI_UNUSED_PARAMETER(info);
 

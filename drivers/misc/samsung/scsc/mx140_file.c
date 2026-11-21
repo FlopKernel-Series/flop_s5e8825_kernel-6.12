@@ -618,14 +618,14 @@ int mx140_basedir_file(struct scsc_mx *mx)
 		return 0;
 
 	/* Try /vendor partition  (post-Oreo) */
-	strlcpy(base_dir, MX140_FW_BASE_DIR_VENDOR_ETC_WIFI, sizeof(base_dir));
+	strscpy(base_dir, MX140_FW_BASE_DIR_VENDOR_ETC_WIFI, sizeof(base_dir));
 	fw_base_dir = MX140_FW_BASE_DIR_VENDOR_ETC_WIFI;
-	strlcpy(exe_dir, MX140_EXE_DIR_VENDOR, sizeof(exe_dir));
+	strscpy(exe_dir, MX140_EXE_DIR_VENDOR, sizeof(exe_dir));
 #if defined(SCSC_SEP_VERSION) && (SCSC_SEP_VERSION < 8)
 	/* Try /system partition (pre-Oreo) */
-	strlcpy(base_dir, MX140_FW_BASE_DIR_SYSTEM_ETC_WIFI, sizeof(base_dir));
+	strscpy(base_dir, MX140_FW_BASE_DIR_SYSTEM_ETC_WIFI, sizeof(base_dir));
 	fw_base_dir = MX140_FW_BASE_DIR_SYSTEM_ETC_WIFI;
-	strlcpy(exe_dir, MX140_EXE_DIR_SYSTEM, sizeof(exe_dir));
+	strscpy(exe_dir, MX140_EXE_DIR_SYSTEM, sizeof(exe_dir));
 #endif
 
 	SCSC_TAG_INFO(MX_FILE, "WLBT base_dir is %s\n", base_dir[0] ? base_dir : "not found");

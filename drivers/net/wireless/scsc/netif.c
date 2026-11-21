@@ -5,6 +5,7 @@
  ****************************************************************************/
 
 #include <linux/netdevice.h>
+#include <net/rps.h>
 #include <linux/etherdevice.h>
 #include <linux/rtnetlink.h>
 #include <net/sch_generic.h>
