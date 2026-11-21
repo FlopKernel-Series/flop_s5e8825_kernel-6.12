@@ -7,7 +7,7 @@
 #include <linux/fat_common.h>
 #include <linux/blkdev.h>
 #include <linux/fs.h>
-#include <asm/unaligned.h>
+#include <linux/unaligned.h>
 #include "bs.h"
 
 #ifdef CONFIG_PROC_STLOG
