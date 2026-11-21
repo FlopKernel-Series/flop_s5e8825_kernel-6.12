@@ -706,7 +706,6 @@ static int kbase_open(struct inode *inode, struct file *filp)
 	}
 
 	filp->private_data = kfile;
-	filp->f_mode |= FMODE_UNSIGNED_OFFSET;
 
 	return 0;
 

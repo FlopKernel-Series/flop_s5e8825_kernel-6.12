@@ -368,7 +368,7 @@ int of_get_panel_gpio(struct device_node *np, struct panel_gpio *gpio)
 	if (of_property_read_u32(np, "dir", &gpio->dir))
 		panel_warn("%s:property('dir') not found\n", np->name);
 
-	if ((gpio->dir & GPIOF_DIR_IN) == GPIOF_DIR_OUT) {
+	if ((gpio->dir & GPIOD_IN) == 0) {
 		ret = gpio_request(gpio->num, gpio->name);
 		if (ret < 0) {
 			panel_err("failed to request gpio(%s:%d)\n", gpio->name, gpio->num);

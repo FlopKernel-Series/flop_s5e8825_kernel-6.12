@@ -31,6 +31,7 @@
 #endif
 
 #include <hw_access/mali_kbase_hw_access_regmap.h>
+#include <linux/vmalloc.h>
 #include <uapi/gpu/arm/v_r49p1/mali_base_kernel.h>
 #include <mali_kbase_hw.h>
 #include "mali_kbase_pm.h"
