@@ -33,8 +33,6 @@ static atomic_t smfc_hwfc_state;
 static wait_queue_head_t smfc_hwfc_sync_wq;
 static wait_queue_head_t smfc_suspend_wq;
 
-extern int iommu_register_device_fault_handler(
-	struct device *dev, iommu_dev_fault_handler_t handler, void *data);
 
 enum {
 	SMFC_HWFC_STANDBY = 0,
@@ -1097,7 +1095,6 @@ static int exynos_smfc_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto err_v4l2;
 
-	iommu_register_device_fault_handler(&pdev->dev, smfc_iommu_fault_handler, smfc);
 
 	timer_setup(&smfc->timer, smfc_timedout_handler, 0);
 
@@ -1125,7 +1122,7 @@ static void smfc_deinit_clock(struct smfc_dev *smfc)
 		clk_put(smfc->clk_gate);
 }
 
-static int exynos_smfc_remove(struct platform_device *pdev)
+static void exynos_smfc_remove(struct platform_device *pdev)
 {
 	struct smfc_dev *smfc = platform_get_drvdata(pdev);
 
@@ -1133,9 +1130,7 @@ static int exynos_smfc_remove(struct platform_device *pdev)
 
 	smfc_deinit_clock(smfc);
 
-	iommu_unregister_device_fault_handler(&pdev->dev);
 
-	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP

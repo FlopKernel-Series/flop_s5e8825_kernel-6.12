@@ -1208,13 +1208,13 @@ static struct vb2_sc_buffer *sc_get_sc_buf_from_v4l2_buf(struct sc_ctx *ctx, str
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (buf->index >= vq->num_buffers) {
-		print_sc(SC_ERR, "%s: buf->index(%d) >= vq->num_buffers(%d)\n",
-			__func__, buf->index, vq->num_buffers);
+	if (buf->index >= vq->max_num_buffers) {
+		print_sc(SC_ERR, "%s: buf->index(%d) >= num_buffers(%d)\n",
+			__func__, buf->index, vq->max_num_buffers);
 		return ERR_PTR(-EINVAL);
 	}
 
-	vb = vq->bufs[buf->index];
+	vb = vb2_get_buffer(vq, buf->index);
 	if (vb == NULL) {
 		print_sc(SC_ERR, "vb2_buffer is NULL\n");
 		return ERR_PTR(-EFAULT);
@@ -2599,16 +2599,18 @@ static void sc_vb2_stop_streaming(struct vb2_queue *vq)
 	clear_bit(CTX_STREAMING, &ctx->flags);
 
 	if (atomic_read(&vq->owned_by_drv_count)) {
+		struct vb2_buffer *vb;
 		unsigned int i;
 
-		for (i = 0; i < vq->num_buffers; ++i) {
-			if (vq->bufs[i]->state == VB2_BUF_STATE_ACTIVE) {
+		for (i = 0; i < vb2_get_num_buffers(vq); ++i) {
+			vb = vb2_get_buffer(vq, i);
+			if (vb && vb->state == VB2_BUF_STATE_ACTIVE) {
 				print_sc(SC_INFO,
 					 "%s:vq->bufs[%d] is in active state\n",
 					 V4L2_TYPE_IS_OUTPUT(vq->type) ? "SRC"
 								       : "DST",
 					 i);
-				vb2_buffer_done(vq->bufs[i], VB2_BUF_STATE_ERROR);
+				vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
 			}
 		}
 
@@ -4157,10 +4159,11 @@ err_v4l2_dev:
 	return ret;
 }
 
-static int sc_sysmmu_fault_handler(struct iommu_fault *fault, void *data)
+static int __maybe_unused sc_sysmmu_fault_handler(struct iommu_fault *fault,
+						  void *data)
 {
 	struct sc_dev *sc = data;
-	unsigned long iova = fault->event.addr;
+	unsigned long iova = fault->prm.addr;
 
 	print_sc(SC_INFO, "++\n");
 
@@ -4863,9 +4866,6 @@ static int sc_probe(struct platform_device *pdev)
 		clk_disable_unprepare(sc->pclk);
 	pm_runtime_put(&pdev->dev);
 
-	iommu_register_device_fault_handler(&pdev->dev,
-					    sc_sysmmu_fault_handler, sc);
-
 #if IS_ENABLED(CONFIG_EXYNOS_ITMON) || IS_ENABLED(CONFIG_EXYNOS_ITMON_V2)
 	sc->itmon_nb.notifier_call = sc_itmon_notifier;
 	itmon_notifier_chain_register(&sc->itmon_nb);
@@ -4904,7 +4904,7 @@ err_m2m:
 	return ret;
 }
 
-static int sc_remove(struct platform_device *pdev)
+static void sc_remove(struct platform_device *pdev)
 {
 	struct sc_dev *sc = platform_get_drvdata(pdev);
 
@@ -4916,11 +4916,8 @@ static int sc_remove(struct platform_device *pdev)
 	destroy_scaler_ext_device(sc->xdev);
 	sc_unregister_m2m_device(sc);
 
-	iommu_unregister_device_fault_handler(&pdev->dev);
-
 	print_sc(SC_DBG_FUNC, "--\n");
 
-	return 0;
 }
 
 static void sc_shutdown(struct platform_device *pdev)

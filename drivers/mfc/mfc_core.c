@@ -166,13 +166,13 @@ int mfc_core_sysmmu_fault_handler(struct iommu_fault *fault, void *param)
 			core->logging_data->fault_trans_info = MFC_MMU1_READL(trans_info);
 		}
 	}
-	core->logging_data->fault_addr = fault->event.addr;
+	core->logging_data->fault_addr = fault->prm.addr;
 
 	mfc_core_err("MFC-%d SysMMU PAGE FAULT at %#llx, AxID: %#x, fault_status: %#x\n",
-			core->id, fault->event.addr,
+			core->id, fault->prm.addr,
 			core->logging_data->fault_trans_info, core->logging_data->fault_status);
 	MFC_TRACE_CORE("MFC-%d SysMMU PAGE FAULT at %#llx (AxID: %#x)\n",
-			core->id, fault->event.addr,
+			core->id, fault->prm.addr,
 			core->logging_data->fault_trans_info);
 
 	call_dop(core, dump_and_broadcast, core);
@@ -793,14 +793,6 @@ static int mfc_core_probe(struct platform_device *pdev)
 				core->core_pdata->encoder_qos_table[i].name,
 				core->core_pdata->encoder_qos_table[i].bts_scen_idx);
 
-	ret = iommu_register_device_fault_handler(core->device,
-			mfc_core_sysmmu_fault_handler, core);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to register sysmmu fault handler %d\n", ret);
-		ret = -EPROBE_DEFER;
-		goto err_sysmmu_fault_handler;
-	}
-
 	/* set async suspend/resume */
 	device_enable_async_suspend(core->device);
 
@@ -850,8 +842,6 @@ static int mfc_core_probe(struct platform_device *pdev)
 	return 0;
 
 err_alloc_debug:
-	iommu_unregister_device_fault_handler(&pdev->dev);
-err_sysmmu_fault_handler:
 	destroy_workqueue(core->qos_ctrl_wq);
 err_qos_ctrl_wq:
 	destroy_workqueue(core->butler_wq);
@@ -882,14 +872,13 @@ err_pm:
 }
 
 /* Remove the driver */
-static int mfc_core_remove(struct platform_device *pdev)
+static void mfc_core_remove(struct platform_device *pdev)
 {
 	struct mfc_core *core = platform_get_drvdata(pdev);
 
 	mfc_core_info("++%s remove\n", core->name);
 
 	mfc_mem_vmem_free(core->dev, &core->dbg_info.addr, "dbg_info");
-	iommu_unregister_device_fault_handler(&pdev->dev);
 	if (timer_pending(&core->meerkat_timer))
 		del_timer(&core->meerkat_timer);
 	flush_workqueue(core->meerkat_wq);
@@ -915,7 +904,6 @@ static int mfc_core_remove(struct platform_device *pdev)
 	mfc_core_deinit_memlog(core);
 
 	mfc_core_info("--%s remove\n", core->name);
-	return 0;
 }
 
 static void mfc_core_shutdown(struct platform_device *pdev)

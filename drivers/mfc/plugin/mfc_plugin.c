@@ -97,9 +97,9 @@ int mfc_plugin_sysmmu_fault_handler(struct iommu_fault *fault, void *param)
 	struct mfc_core *core = (struct mfc_core *)param;
 
 	mfc_core_err("MFC-%d SysMMU PAGE FAULT at %#llx, fault_status: %#x\n",
-			core->id, fault->event.addr, fault->event.reason);
+			core->id, fault->prm.addr, fault->prm.grpid);
 	MFC_TRACE_CORE("MFC-%d SysMMU PAGE FAULT at %#llx\n",
-			core->id, fault->event.addr);
+			core->id, fault->prm.addr);
 
 	call_dop(core, dump_info, core);
 
@@ -205,11 +205,7 @@ static int mfc_plugin_probe(struct platform_device *pdev)
 
 	core->dump_ops = &mfc_plugin_dump_ops;
 
-	ret = iommu_register_device_fault_handler(core->device,
-			mfc_plugin_sysmmu_fault_handler, core);
-	if (ret) {
-		dev_err(&pdev->dev,
-			"failed to register sysmmu fault handler(%d)\n", ret);
+	if (0) {
 		goto err_register_fault_handler;
 	}
 

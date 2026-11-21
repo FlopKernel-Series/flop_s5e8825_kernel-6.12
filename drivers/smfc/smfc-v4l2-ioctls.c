@@ -691,7 +691,7 @@ static int smfc_v4l2_prepare_s_fmt(struct smfc_ctx *ctx,
 				V4L2_BUF_TYPE_VIDEO_OUTPUT);
 	u32 flags;
 
-	if (thisvq->num_buffers > 0) {
+	if (vb2_get_num_buffers(thisvq) > 0) {
 		dev_err(ctx->smfc->dev,
 			"S_FMT after REQBUFS is not allowed\n");
 		return -EBUSY;
@@ -700,7 +700,7 @@ static int smfc_v4l2_prepare_s_fmt(struct smfc_ctx *ctx,
 	flags = smfc_config_ctxflag(ctx, SMFC_CTX_COMPRESS,
 			is_jpeg(smfc_fmt) != V4L2_TYPE_IS_OUTPUT(type));
 
-	if (othervq->num_buffers > 0) { /* REQBUFSed on other vq */
+	if (vb2_get_num_buffers(othervq) > 0) { /* REQBUFSed on other vq */
 		if ((flags & SMFC_CTX_COMPRESS) !=
 					(ctx->flags & SMFC_CTX_COMPRESS)) {
 			dev_err(ctx->smfc->dev,
@@ -901,7 +901,7 @@ static int v4l2_smfc_qbuf(struct file *file, void *priv,
 	if (!vq)
 		return -EINVAL;
 
-	if (buf->index >= vq->num_buffers) {
+	if (buf->index >= vb2_get_num_buffers(vq)) {
 		v4l2_err(&ctx->smfc->v4l2_dev,
 			"buf->index should be less than vq->num_buffers.\n");
 		return -EINVAL;
