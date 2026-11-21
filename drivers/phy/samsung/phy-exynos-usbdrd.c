@@ -44,6 +44,7 @@
 #ifdef CONFIG_OF
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
+#include <linux/of_platform.h>
 #endif
 
 #include "phy-exynos-usbdrd.h"
@@ -2123,7 +2124,7 @@ void exynos_usbdrd_shutdown_notice(int shutdown)
 EXPORT_SYMBOL_GPL(exynos_usbdrd_shutdown_notice);
 
 static struct phy *exynos_usbdrd_phy_xlate(struct device *dev,
-					struct of_phandle_args *args)
+					const struct of_phandle_args *args)
 {
 	struct exynos_usbdrd_phy *phy_drd = dev_get_drvdata(dev);
 
