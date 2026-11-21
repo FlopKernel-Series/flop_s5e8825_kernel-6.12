@@ -121,7 +121,7 @@ static int dev_set_cur_state(struct thermal_cooling_device *cdev,
 
 	dev->dev_state = (unsigned int)state;
 	dev->dev_val = dev->freq_table[state].freq;
-	dbg_snapshot_thermal(NULL, 0, cdev->type, dev->dev_val);
+	dbg_snapshot_thermal(NULL, 0, (char *)cdev->type, dev->dev_val);
 	exynos_pm_qos_update_request(&dev->thermal_pm_qos_max, dev->dev_val);
 
 	return 0;
@@ -150,29 +150,53 @@ static int dev_cooling_get_level(struct thermal_cooling_device *cdev,
 }
 
 
+/**
+ * find_cooling_instance() - get the instance of @cdev bound to trip @trip of @tz
+ * @tz: thermal zone device
+ * @cdev: cooling device
+ * @trip: trip point index within the thermal zone
+ *
+ * Return: a pointer to the cooling instance, or NULL if it is not bound.
+ */
+static struct thermal_instance *
+find_cooling_instance(struct thermal_zone_device *tz,
+		      struct thermal_cooling_device *cdev, int trip)
+{
+	struct thermal_trip_desc *td;
+	struct thermal_instance *instance;
+
+	mutex_lock(&tz->lock);
+	for_each_trip_desc(tz, td) {
+		if (td - tz->trips != trip)
+			continue;
+
+		list_for_each_entry(instance, &td->thermal_instances, trip_node) {
+			if (instance->cdev == cdev) {
+				mutex_unlock(&tz->lock);
+				return instance;
+			}
+		}
+	}
+	mutex_unlock(&tz->lock);
+
+	return NULL;
+}
+
 static int parse_ect_cooling_level(struct thermal_cooling_device *cdev,
 				   char *tz_name)
 {
 	struct thermal_instance *instance;
 	struct thermal_zone_device *tz;
-	bool foundtz = false;
 	void *thermal_block;
 	struct ect_ap_thermal_function *function;
 	int i, temperature;
 	unsigned int freq;
 
-	mutex_lock(&cdev->lock);
-	list_for_each_entry(instance, &cdev->thermal_instances, cdev_node) {
-		tz = instance->tz;
-		if (!strncasecmp(tz_name, tz->type, THERMAL_NAME_LENGTH)) {
-			foundtz = true;
-			break;
-		}
-	}
-	mutex_unlock(&cdev->lock);
-
-	if (!foundtz)
+	tz = thermal_zone_get_zone_by_name(tz_name);
+	if (IS_ERR(tz)) {
+		tz = NULL;
 		goto skip_ect;
+	}
 
 	thermal_block = ect_get_block(BLOCK_AP_THERMAL);
 	if (!thermal_block)
@@ -189,7 +213,7 @@ static int parse_ect_cooling_level(struct thermal_cooling_device *cdev,
 		temperature = function->range_list[i].lower_bound_temperature;
 		freq = function->range_list[i].max_frequency;
 
-		instance = get_thermal_instance(tz, cdev, i);
+		instance = find_cooling_instance(tz, cdev, i);
 		if (!instance) {
 			pr_err("%s: (%s, %d)instance isn't valid\n", __func__, tz_name, i);
 			goto skip_ect;

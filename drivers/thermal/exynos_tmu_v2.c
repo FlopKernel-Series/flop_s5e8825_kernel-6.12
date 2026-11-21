@@ -94,6 +94,17 @@ static int exynos_tmu_get_trip_temp(struct exynos_tmu_data *data, int trip, int 
 	return 0;
 }
 
+static int exynos_tmu_set_trip_temp_by_idx(struct thermal_zone_device *tz,
+					   int trip, int temp)
+{
+	struct exynos_tmu_data *data = thermal_zone_device_priv(tz);
+
+	if (trip < 0 || trip >= data->num_trips)
+		return -EINVAL;
+
+	return tz->ops.set_trip_temp(tz, data->trips[trip], temp);
+}
+
 /**
  * struct freq_table - frequency table along with power entries
  * @frequency:	frequency in KHz
@@ -350,17 +361,17 @@ static void exynos_report_trigger(struct exynos_tmu_data *p)
 				exynos_tmu_get_trip_temp(p, 3, &p->boost_param.boost_mode_trip_3_temp);
 				exynos_tmu_get_trip_temp(p, 4, &p->boost_param.boost_mode_trip_4_temp);
 
-				tz->ops->set_trip_temp(tz, 2, p->boost_param.throttle_mode_trip_2_temp);
-				tz->ops->set_trip_temp(tz, 3, p->boost_param.throttle_mode_trip_3_temp);
-				tz->ops->set_trip_temp(tz, 4, p->boost_param.throttle_mode_trip_4_temp);
+				exynos_tmu_set_trip_temp_by_idx(tz, 2, p->boost_param.throttle_mode_trip_2_temp);
+				exynos_tmu_set_trip_temp_by_idx(tz, 3, p->boost_param.throttle_mode_trip_3_temp);
+				exynos_tmu_set_trip_temp_by_idx(tz, 4, p->boost_param.throttle_mode_trip_4_temp);
 			}
 		} else {
 			if (boost_mode == STANDBY_MODE) {
 				p->boost_param.boost_mode = STANDBY_MODE;
 
-				tz->ops->set_trip_temp(tz, 2, p->boost_param.boost_mode_trip_2_temp);
-				tz->ops->set_trip_temp(tz, 3, p->boost_param.boost_mode_trip_3_temp);
-				tz->ops->set_trip_temp(tz, 4, p->boost_param.boost_mode_trip_4_temp);
+				exynos_tmu_set_trip_temp_by_idx(tz, 2, p->boost_param.boost_mode_trip_2_temp);
+				exynos_tmu_set_trip_temp_by_idx(tz, 3, p->boost_param.boost_mode_trip_3_temp);
+				exynos_tmu_set_trip_temp_by_idx(tz, 4, p->boost_param.boost_mode_trip_4_temp);
 			}
 		}
 	}
@@ -411,16 +422,20 @@ static void exynos_tmu_control(struct platform_device *pdev, bool on)
 	mutex_unlock(&data->lock);
 }
 
-static int exynos_tmu_set_trip_temp(struct thermal_zone_device *tz, int trip,
-		int temp)
+static int exynos_tmu_set_trip_temp(struct thermal_zone_device *tz,
+		const struct thermal_trip *trip, int temp)
 {
 	struct exynos_tmu_data *data = thermal_zone_device_priv(tz);
+	int idx;
 
 	if (!data)
 		return -ENODEV;
 
-	tz->trips[trip].temperature = temp;
-	data->trips[trip]->temperature = temp;
+	idx = exynos_tmu_trip_find_idx(data, trip);
+	if (idx == -EINVAL)
+		return -EINVAL;
+
+	thermal_zone_set_trip_temp(tz, (struct thermal_trip *)trip, temp);
 
 	return 0;
 }
@@ -746,6 +761,7 @@ static void update_passive_instance(struct thermal_zone_device *tz,
 static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
 {
 	struct exynos_tmu_data *data = thermal_zone_device_priv(tz);
+	struct thermal_trip_desc *td = &tz->trips[trip];
 	int trip_temp;
 	enum thermal_trip_type trip_type;
 	enum exynos_thermal_trend trend;
@@ -770,7 +786,7 @@ static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
 
 	mutex_lock(&tz->lock);
 
-	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
+	list_for_each_entry(instance, &td->thermal_instances, trip_node) {
 		if (instance->trip != data->trips[trip])
 			continue;
 
@@ -813,14 +829,18 @@ static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
  */
 static int step_wise_throttle(struct thermal_zone_device *tz, int trip)
 {
-	struct thermal_instance *instance;
+	struct thermal_trip_desc *td;
 
 	thermal_zone_trip_update(tz, trip);
 
 	mutex_lock(&tz->lock);
 
-	list_for_each_entry(instance, &tz->thermal_instances, tz_node)
-		thermal_cdev_update(instance->cdev);
+	for_each_trip_desc(tz, td) {
+		struct thermal_instance *instance;
+
+		list_for_each_entry(instance, &td->thermal_instances, trip_node)
+			thermal_cdev_update(instance->cdev);
+	}
 
 	mutex_unlock(&tz->lock);
 
@@ -895,25 +915,28 @@ static void reset_pi_params(struct exynos_tmu_data *data)
 
 static void allow_maximum_power(struct exynos_tmu_data *data)
 {
-	struct thermal_instance *instance;
 	struct thermal_zone_device *tz = data->tzd;
 	struct exynos_pi_param *params = data->pi_param;
+	struct thermal_trip_desc *td;
+	struct thermal_instance *instance;
 	int idx = -EINVAL;
 
-	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
-		idx = exynos_tmu_trip_find_idx(data, instance->trip);
-		if (idx == -EINVAL)
-			continue;
+	for_each_trip_desc(tz, td) {
+		list_for_each_entry(instance, &td->thermal_instances, trip_node) {
+			idx = exynos_tmu_trip_find_idx(data, instance->trip);
+			if (idx == -EINVAL)
+				continue;
 
-		if ((idx != params->trip_control_temp) ||
-		    (!cdev_is_power_actor(instance->cdev)))
-			continue;
+			if ((idx != params->trip_control_temp) ||
+			    (!cdev_is_power_actor(instance->cdev)))
+				continue;
 
-		instance->target = 0;
-		mutex_lock(&instance->cdev->lock);
-		instance->cdev->updated = false;
-		mutex_unlock(&instance->cdev->lock);
-		thermal_cdev_update(instance->cdev);
+			instance->target = 0;
+			mutex_lock(&instance->cdev->lock);
+			instance->cdev->updated = false;
+			mutex_unlock(&instance->cdev->lock);
+			thermal_cdev_update(instance->cdev);
+		}
 	}
 }
 
@@ -985,6 +1008,7 @@ static int exynos_pi_controller(struct exynos_tmu_data *data, int control_temp)
 	struct exynos_pi_param *params = data->pi_param;
 	struct thermal_instance *instance, *main_instance, *sub_instance;
 	struct thermal_cooling_device *cdev;
+	struct thermal_trip_desc *td;
 	int ret = 0;
 	bool found_actor = false;
 	u32 max_power, power_range;
@@ -992,29 +1016,31 @@ static int exynos_pi_controller(struct exynos_tmu_data *data, int control_temp)
 	struct thermal_cooling_device *sub_cdev = NULL;
 	int idx = -EINVAL;
 
-	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
-		idx = exynos_tmu_trip_find_idx(data, instance->trip);
-		if (idx == -EINVAL)
-			continue;
+	for_each_trip_desc(tz, td) {
+		list_for_each_entry(instance, &td->thermal_instances, trip_node) {
+			idx = exynos_tmu_trip_find_idx(data, instance->trip);
+			if (idx == -EINVAL)
+				continue;
 
-		if ((idx == params->trip_control_temp) &&
-		    cdev_is_power_actor(instance->cdev)) {
-			if (data->use_sync_pi_thermal) {
-				struct exynos_cpufreq_cooling_device *cpufreq_cdev = instance->cdev->devdata;
-				struct thermal_zone_device *cdev_tz = cpufreq_cdev ? cpufreq_cdev->tz : NULL;
+			if ((idx == params->trip_control_temp) &&
+			    cdev_is_power_actor(instance->cdev)) {
+				if (data->use_sync_pi_thermal) {
+					struct exynos_cpufreq_cooling_device *cpufreq_cdev = instance->cdev->devdata;
+					struct thermal_zone_device *cdev_tz = cpufreq_cdev ? cpufreq_cdev->tz : NULL;
 
-				if (cdev_tz && (tz->id == cdev_tz->id)) {
+					if (cdev_tz && (tz->id == cdev_tz->id)) {
+						found_actor = true;
+						main_instance = instance;
+						cdev = instance->cdev;
+					} else {
+						sub_instance = instance;
+						sub_cdev = instance->cdev;
+					}
+				} else {
 					found_actor = true;
 					main_instance = instance;
 					cdev = instance->cdev;
-				} else {
-					sub_instance = instance;
-					sub_cdev = instance->cdev;
 				}
-			} else {
-				found_actor = true;
-				main_instance = instance;
-				cdev = instance->cdev;
 			}
 		}
 	}
@@ -1116,8 +1142,8 @@ static void __exynos_tmu_set_boost_mode(struct exynos_tmu_data *data, enum exyno
 		data->boost_param.boost_mode = BOOT_MODE;
 		update_boost_mode_time = false;
 	} else if (new_mode == THROTTLE_MODE || new_mode == BOOT_MODE) {
-		tz->ops->set_trip_temp(tz, params->trip_control_temp, data->boost_param.throttle_mode_control_temp);
-		tz->ops->set_trip_temp(tz, params->trip_switch_on, data->boost_param.throttle_mode_switch_on);
+		exynos_tmu_set_trip_temp_by_idx(tz, params->trip_control_temp, data->boost_param.throttle_mode_control_temp);
+		exynos_tmu_set_trip_temp_by_idx(tz, params->trip_switch_on, data->boost_param.throttle_mode_switch_on);
 		params->sustainable_power = data->boost_param.throttle_mode_sustainable_power;
 		if (new_mode == BOOT_MODE)
 			exynos_acpm_tmu_change_threshold(data->id, data->boost_param.throttle_mode_dfs_temp / MCELSIUS, 6);
@@ -1130,8 +1156,8 @@ static void __exynos_tmu_set_boost_mode(struct exynos_tmu_data *data, enum exyno
 
 		update_boost_sync = true;
 	} else if (cur_mode == THROTTLE_MODE && new_mode == STANDBY_MODE) {
-		tz->ops->set_trip_temp(tz, params->trip_control_temp, data->boost_param.boost_mode_control_temp);
-		tz->ops->set_trip_temp(tz, params->trip_switch_on, data->boost_param.boost_mode_switch_on);
+		exynos_tmu_set_trip_temp_by_idx(tz, params->trip_control_temp, data->boost_param.boost_mode_control_temp);
+		exynos_tmu_set_trip_temp_by_idx(tz, params->trip_switch_on, data->boost_param.boost_mode_switch_on);
 		params->sustainable_power = data->boost_param.boost_mode_sustainable_power;
 
 		data->hotplug_in_threshold = data->boost_param.boost_mode_hp_in_threshold / MCELSIUS;
@@ -1395,7 +1421,7 @@ static int exynos_tmu_irq_work_init(struct platform_device *pdev)
 		kthread_init_work(&data->hotplug_work, exynos_throttle_cpu_hotplug);
 
 		snprintf(data->cpuhp_name, THERMAL_NAME_LENGTH, "DTM_%s", data->tmu_name);
-		ecs_request_register(data->cpuhp_name, cpu_possible_mask);
+		ecs_request_register(data->cpuhp_name, cpu_possible_mask, ECS_MAX);
 	}
 
 	return ret;
@@ -1698,7 +1724,7 @@ static void exynos_throttle_cpu_hotplug(struct kthread_work *work)
 			 * If current temperature is lower than low threshold,
 			 * call cluster1_cores_hotplug(false) for hotplugged out cpus.
 			 */
-			ecs_request(data->cpuhp_name, cpu_possible_mask);
+			ecs_request(data->cpuhp_name, cpu_possible_mask, ECS_MAX);
 			data->is_cpu_hotplugged_out = false;
 		}
 	} else {
@@ -1709,7 +1735,7 @@ static void exynos_throttle_cpu_hotplug(struct kthread_work *work)
 			 */
 			data->is_cpu_hotplugged_out = true;
 			cpumask_andnot(&mask, cpu_possible_mask, &data->cpu_domain);
-			ecs_request(data->cpuhp_name, &mask);
+			ecs_request(data->cpuhp_name, &mask, ECS_MAX);
 		}
 	}
 
@@ -2285,7 +2311,7 @@ static int exynos_tmu_parse_ect(struct exynos_tmu_data *data)
 		for (i = 0; i < function->num_of_range; ++i) {
 			temperature = function->range_list[i].lower_bound_temperature;
 			freq = function->range_list[i].max_frequency;
-			exynos_tmu_set_trip_temp(tz, i, temperature * MCELSIUS);
+			exynos_tmu_set_trip_temp_by_idx(tz, i, temperature * MCELSIUS);
 
 			pr_info("Parsed From ECT : [%d] Temperature : %d, frequency : %u\n",
 					i, temperature, freq);
@@ -2339,7 +2365,7 @@ static int exynos_tmu_parse_ect(struct exynos_tmu_data *data)
 
 		for (i = 0; i < pidtm_block->num_of_temperature; ++i) {
 			temperature = pidtm_block->temperature_list[i];
-			exynos_tmu_set_trip_temp(tz, i, temperature * MCELSIUS);
+			exynos_tmu_set_trip_temp_by_idx(tz, i, temperature * MCELSIUS);
 			pr_info("Parsed From ECT : [%d] Temperature : %d\n", i, temperature);
 		}
 
@@ -2407,7 +2433,7 @@ static int exynos_tmu_parse_ect(struct exynos_tmu_data *data)
 		if ((value = exynos_tmu_ect_get_param(pidtm_block, "limited_threshold")) != -1) {
 			pr_info("Parse from ECT limited_threshold: %d\n", value);
 			limited_threshold = value * MCELSIUS;
-			tz->ops->set_trip_temp(tz, 3, temperature  * MCELSIUS);
+			exynos_tmu_set_trip_temp_by_idx(tz, 3, temperature  * MCELSIUS);
 			data->limited_threshold = limited_threshold;
 		}
 
@@ -2427,7 +2453,7 @@ static int exynos_tmu_parse_ect(struct exynos_tmu_data *data)
 		if ((value = exynos_tmu_ect_get_param(pidtm_block, "limited_threshold_1")) != -1) {
 			pr_info("Parse from ECT limited_threshold: %d\n", value);
 			limited_threshold = value * MCELSIUS;
-			tz->ops->set_trip_temp(tz, 3, temperature  * MCELSIUS);
+			exynos_tmu_set_trip_temp_by_idx(tz, 3, temperature  * MCELSIUS);
 			data->limited_threshold = limited_threshold;
 		}
 
@@ -2448,7 +2474,7 @@ static int exynos_tmu_parse_ect(struct exynos_tmu_data *data)
 		if ((value = exynos_tmu_ect_get_param(pidtm_block, "limited_threshold_2")) != -1) {
 			pr_info("Parse from ECT limited_threshold: %d\n", value);
 			limited_threshold = value * MCELSIUS;
-			tz->ops->set_trip_temp(tz, 4, temperature  * MCELSIUS);
+			exynos_tmu_set_trip_temp_by_idx(tz, 4, temperature  * MCELSIUS);
 			data->limited_threshold_2 = limited_threshold;
 		}
 
@@ -2532,7 +2558,7 @@ static int exynos_tmu_probe(struct platform_device *pdev)
 		if(data->num_trips >= MAX_NUM_TRIPS){
 			break;
 		}
-		data->trips[data->num_trips++] = &data->tzd->trips[i];
+		data->trips[data->num_trips++] = &data->tzd->trips[i].trip;
 	}
 	mutex_unlock(&data->tzd->lock);
 
