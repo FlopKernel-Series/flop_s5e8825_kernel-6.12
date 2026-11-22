@@ -1170,8 +1170,8 @@ static int himax_input_notify_call(struct notifier_block *n, unsigned long data,
 
 #if IS_ENABLED(CONFIG_SAMSUNG_TUI)
 struct himax_ts_data *stui_ts;
-extern int stui_spi_lock(struct spi_master *spi);
-extern int stui_spi_unlock(struct spi_master *spi);
+extern int stui_spi_lock(struct spi_controller *spi);
+extern int stui_spi_unlock(struct spi_controller *spi);
 
 static int himax_stui_tsp_enter(void)
 {
@@ -1182,7 +1182,7 @@ static int himax_stui_tsp_enter(void)
 
 	himax_int_enable(INT_DISABLE_NOSYNC);
 
-	ret = stui_spi_lock(spi->master);
+	ret = stui_spi_lock(spi->controller);
 	if (ret < 0) {
 		pr_err("[STUI] stui_spi_lock failed : %d\n", ret);
 		himax_int_enable(INT_ENABLE);
@@ -1199,7 +1199,7 @@ static int himax_stui_tsp_exit(void)
 
 	input_info(true, &spi->dev, ">> %s\n", __func__);
 
-	ret = stui_spi_unlock(spi->master);
+	ret = stui_spi_unlock(spi->controller);
 	if (ret < 0) {
 		pr_err("[STUI] stui_spi_unlock failed : %d\n", ret);
 	}
@@ -1232,7 +1232,7 @@ int himax_chip_common_probe(struct spi_device *spi)
 
 	input_info(true, &spi->dev, "%s:Enter\n", __func__);
 
-	if (spi->master->flags & SPI_MASTER_HALF_DUPLEX) {
+	if (spi->controller->flags & SPI_CONTROLLER_HALF_DUPLEX) {
 		dev_err(&spi->dev,
 				"%s: Full duplex not supported by host\n", __func__);
 		return -EIO;
@@ -1255,7 +1255,7 @@ int himax_chip_common_probe(struct spi_device *spi)
 	private_ts = ts;
 	spi->bits_per_word = 8;
 	spi->mode = SPI_MODE_3;
-	spi->chip_select = 0;
+	spi->chip_select[0] = 0;
 
 	ts->spi = spi;
 	mutex_init(&(ts->spi_lock));
