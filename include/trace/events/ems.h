@@ -511,4 +511,5 @@ TRACE_EVENT(ecs_update,
 #endif /* _TRACE_EMS_H */
 
 /* This part must be outside protection */
+#undef TRACE_INCLUDE_PATH
 #include <trace/define_trace.h>
